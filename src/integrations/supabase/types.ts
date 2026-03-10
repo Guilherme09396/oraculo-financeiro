@@ -61,6 +61,8 @@ export type Database = {
           id: string
           is_installment: boolean | null
           is_recurring: boolean | null
+          paid_at: string | null
+          receipt_url: string | null
           recurring_period: string | null
           status: string
           total_installments: number | null
@@ -78,6 +80,8 @@ export type Database = {
           id?: string
           is_installment?: boolean | null
           is_recurring?: boolean | null
+          paid_at?: string | null
+          receipt_url?: string | null
           recurring_period?: string | null
           status?: string
           total_installments?: number | null
@@ -95,6 +99,8 @@ export type Database = {
           id?: string
           is_installment?: boolean | null
           is_recurring?: boolean | null
+          paid_at?: string | null
+          receipt_url?: string | null
           recurring_period?: string | null
           status?: string
           total_installments?: number | null
@@ -191,6 +197,7 @@ export type Database = {
           id: string
           notes: string | null
           payment_method: string | null
+          receipt_url: string | null
           type: string
           updated_at: string
           user_id: string
@@ -204,6 +211,7 @@ export type Database = {
           id?: string
           notes?: string | null
           payment_method?: string | null
+          receipt_url?: string | null
           type: string
           updated_at?: string
           user_id: string
@@ -217,6 +225,7 @@ export type Database = {
           id?: string
           notes?: string | null
           payment_method?: string | null
+          receipt_url?: string | null
           type?: string
           updated_at?: string
           user_id?: string
