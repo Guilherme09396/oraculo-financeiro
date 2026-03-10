@@ -1,20 +1,25 @@
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useTransactions } from '@/hooks/useTransactions';
-import { useCategories } from '@/hooks/useCategories';
+import { useProfile } from '@/hooks/useProfile';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/lib/auth';
 import { formatCurrency } from '@/lib/format';
 import { Card } from '@/components/ui/card';
+import MonthSelector from '@/components/MonthSelector';
 import {
   TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight,
-  PiggyBank, Activity, AlertTriangle
+  PiggyBank, Activity, AlertTriangle, Clock, Target,
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell
+  PieChart, Pie, Cell, BarChart, Bar,
 } from 'recharts';
 
 const CHART_COLORS = [
   'hsl(142, 60%, 45%)', 'hsl(199, 89%, 48%)', 'hsl(38, 92%, 55%)',
   'hsl(280, 65%, 60%)', 'hsl(0, 72%, 55%)', 'hsl(170, 60%, 45%)',
+  'hsl(320, 70%, 55%)', 'hsl(60, 70%, 45%)',
 ];
 
 function StatCard({ label, value, icon: Icon, trend, color }: {
@@ -37,17 +42,8 @@ function StatCard({ label, value, icon: Icon, trend, color }: {
 }
 
 function HealthScore({ score }: { score: number }) {
-  const getColor = (s: number) => {
-    if (s >= 80) return 'text-income';
-    if (s >= 60) return 'text-warning';
-    return 'text-expense';
-  };
-  const getLabel = (s: number) => {
-    if (s >= 80) return 'Excelente';
-    if (s >= 60) return 'Boa';
-    if (s >= 40) return 'Regular';
-    return 'Atenção';
-  };
+  const getColor = (s: number) => s >= 80 ? 'text-income' : s >= 60 ? 'text-warning' : 'text-expense';
+  const getLabel = (s: number) => s >= 80 ? 'Excelente' : s >= 60 ? 'Boa' : s >= 40 ? 'Regular' : 'Atenção';
 
   return (
     <Card className="p-6 bg-card border-border animate-fade-in">
@@ -56,60 +52,115 @@ function HealthScore({ score }: { score: number }) {
         <div className="relative w-24 h-24">
           <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
             <circle cx="50" cy="50" r="42" fill="none" stroke="hsl(var(--secondary))" strokeWidth="8" />
-            <circle
-              cx="50" cy="50" r="42" fill="none"
-              stroke="currentColor"
-              strokeWidth="8"
-              strokeDasharray={`${score * 2.64} 264`}
-              strokeLinecap="round"
-              className={getColor(score)}
-            />
+            <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="8"
+              strokeDasharray={`${score * 2.64} 264`} strokeLinecap="round" className={getColor(score)} />
           </svg>
-          <span className={`absolute inset-0 flex items-center justify-center text-2xl font-bold ${getColor(score)}`}>
-            {score}
-          </span>
+          <span className={`absolute inset-0 flex items-center justify-center text-2xl font-bold ${getColor(score)}`}>{score}</span>
         </div>
         <div>
           <p className={`text-lg font-semibold ${getColor(score)}`}>{getLabel(score)}</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            Score baseado nos seus hábitos financeiros do mês atual
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">Baseado nos seus hábitos financeiros do mês</p>
         </div>
       </div>
     </Card>
   );
 }
 
-export default function Dashboard() {
-  const { data: transactions = [] } = useTransactions();
-  const { data: categories = [] } = useCategories();
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Bom dia';
+  if (h < 18) return 'Boa tarde';
+  return 'Boa noite';
+}
 
+export default function Dashboard() {
   const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const [month, setMonth] = useState(now.getMonth());
+  const [year, setYear] = useState(now.getFullYear());
+  const { user } = useAuth();
+  const { data: profile } = useProfile();
+  const { data: transactions = [] } = useTransactions();
+
+  const { data: futureItems = [] } = useQuery({
+    queryKey: ['future_transactions'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('future_transactions')
+        .select('*, categories(name, icon, color)').order('due_date');
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
+  const { data: goals = [] } = useQuery({
+    queryKey: ['goals'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('goals').select('*');
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
+  const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
   const stats = useMemo(() => {
-    const monthly = transactions.filter((t: any) => t.date >= startOfMonth);
+    const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth);
     const income = monthly.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + Number(t.amount), 0);
     const expenses = monthly.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + Number(t.amount), 0);
-    const balance = income - expenses;
-    const savings = income > 0 ? ((income - expenses) / income * 100) : 0;
-    const score = Math.max(0, Math.min(100, Math.round(50 + savings / 2)));
 
-    return { income, expenses, balance, savings, score };
-  }, [transactions, startOfMonth]);
+    // Include paid future transactions in this month (by paid_at)
+    const paidFuture = futureItems.filter((f: any) => {
+      const paidAt = (f as any).paid_at;
+      return f.status === 'paid' && paidAt && paidAt >= startOfMonth && paidAt <= endOfMonth;
+    });
+    const futureExpPaid = paidFuture.filter((f: any) => f.type === 'expense').reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const futureIncPaid = paidFuture.filter((f: any) => f.type === 'income').reduce((s: number, f: any) => s + Number(f.amount), 0);
+
+    const totalIncome = income + futureIncPaid;
+    const totalExpenses = expenses + futureExpPaid;
+    const balance = totalIncome - totalExpenses;
+    const savings = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome * 100) : 0;
+
+    // Pending future items
+    const pendingFuture = futureItems.filter((f: any) => f.status === 'pending');
+    const toReceive = pendingFuture.filter((f: any) => f.type === 'income').reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const toPay = pendingFuture.filter((f: any) => f.type === 'expense').reduce((s: number, f: any) => s + Number(f.amount), 0);
+
+    // Health score
+    const goalsProgress = goals.length > 0
+      ? goals.reduce((s: number, g: any) => s + Math.min(1, Number(g.current_amount) / Number(g.target_amount)), 0) / goals.length * 20
+      : 10;
+    const savingsScore = Math.min(30, Math.max(0, savings * 0.6));
+    const expenseRatio = totalIncome > 0 ? Math.min(30, Math.max(0, (1 - totalExpenses / totalIncome) * 60)) : 15;
+    const overdueCount = pendingFuture.filter((f: any) => f.due_date < new Date().toISOString().split('T')[0]).length;
+    const overdueScore = Math.max(0, 20 - overdueCount * 5);
+    const score = Math.round(Math.min(100, savingsScore + expenseRatio + goalsProgress + overdueScore));
+
+    return { income: totalIncome, expenses: totalExpenses, balance, savings, score, toReceive, toPay, transactionCount: monthly.length };
+  }, [transactions, futureItems, goals, startOfMonth, endOfMonth]);
 
   const expenseByCategory = useMemo(() => {
-    const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.type === 'expense');
+    const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth && t.type === 'expense');
     const map = new Map<string, number>();
     monthly.forEach((t: any) => {
       const name = (t as any).categories?.name || 'Sem categoria';
       map.set(name, (map.get(name) || 0) + Number(t.amount));
     });
+    // Add paid future expenses
+    futureItems.filter((f: any) => {
+      const paidAt = (f as any).paid_at;
+      return f.status === 'paid' && f.type === 'expense' && paidAt && paidAt >= startOfMonth && paidAt <= endOfMonth;
+    }).forEach((f: any) => {
+      const name = (f as any).categories?.name || 'Sem categoria';
+      map.set(name, (map.get(name) || 0) + Number(f.amount));
+    });
     return Array.from(map.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  }, [transactions, startOfMonth]);
+  }, [transactions, futureItems, startOfMonth, endOfMonth]);
 
   const dailyData = useMemo(() => {
-    const monthly = transactions.filter((t: any) => t.date >= startOfMonth);
+    const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth);
     const map = new Map<string, { income: number; expense: number }>();
     monthly.forEach((t: any) => {
       const day = t.date.slice(8, 10);
@@ -119,52 +170,86 @@ export default function Dashboard() {
       map.set(day, prev);
     });
     return Array.from(map.entries()).map(([day, v]) => ({ day, ...v })).sort((a, b) => a.day.localeCompare(b.day));
-  }, [transactions, startOfMonth]);
+  }, [transactions, startOfMonth, endOfMonth]);
 
   const alerts = useMemo(() => {
-    const list: string[] = [];
+    const list: { text: string; type: 'warning' | 'info' | 'danger' }[] = [];
+    const today = new Date().toISOString().split('T')[0];
+
+    // Overdue
+    const overdue = futureItems.filter((f: any) => f.status === 'pending' && f.due_date < today);
+    if (overdue.length > 0) {
+      list.push({ text: `⚠️ Você possui ${overdue.length} conta(s) vencida(s) que ainda não foram pagas.`, type: 'danger' });
+    }
+
+    // Upcoming due
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    const upcoming = futureItems.filter((f: any) => f.status === 'pending' && f.due_date >= today && f.due_date <= nextWeek.toISOString().split('T')[0]);
+    if (upcoming.length > 0) {
+      list.push({ text: `📅 ${upcoming.length} conta(s) vencem nos próximos 7 dias.`, type: 'warning' });
+    }
+
     if (stats.expenses > stats.income && stats.income > 0) {
-      list.push('⚠️ Seus gastos estão maiores que sua renda este mês!');
+      list.push({ text: '🚨 Seus gastos estão maiores que sua renda este mês!', type: 'danger' });
     }
     if (stats.savings < 10 && stats.income > 0) {
-      list.push('💡 Você está economizando menos de 10% da renda.');
+      list.push({ text: '💡 Você está economizando menos de 10% da renda.', type: 'warning' });
     }
     if (expenseByCategory.length > 0) {
-      list.push(`📊 Maior gasto: ${expenseByCategory[0].name} (${formatCurrency(expenseByCategory[0].value)})`);
+      const top = expenseByCategory[0];
+      const pct = stats.expenses > 0 ? (top.value / stats.expenses * 100).toFixed(0) : 0;
+      list.push({ text: `📊 Maior gasto: ${top.name} — ${formatCurrency(top.value)} (${pct}% do total)`, type: 'info' });
+    }
+    if (goals.length > 0) {
+      const achieved = goals.filter((g: any) => Number(g.current_amount) >= Number(g.target_amount)).length;
+      if (achieved > 0) list.push({ text: `🎯 Parabéns! Você atingiu ${achieved} meta(s) financeira(s)!`, type: 'info' });
     }
     return list;
-  }, [stats, expenseByCategory]);
+  }, [stats, expenseByCategory, futureItems, goals]);
+
+  const tooltipStyle = {
+    contentStyle: { background: 'hsl(220, 18%, 10%)', border: '1px solid hsl(220, 14%, 16%)', borderRadius: '8px', color: 'hsl(210, 20%, 95%)' },
+  };
+
+  const displayName = profile?.display_name || user?.email?.split('@')[0] || 'Usuário';
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground">Visão geral das suas finanças</p>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">{getGreeting()}, {displayName}! 👋</h1>
+          <p className="text-muted-foreground">Sua visão financeira completa</p>
+        </div>
+        <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 6 Stat Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         <StatCard label="Receitas" value={formatCurrency(stats.income)} icon={TrendingUp} color="text-income" />
         <StatCard label="Despesas" value={formatCurrency(stats.expenses)} icon={TrendingDown} color="text-expense" />
         <StatCard label="Saldo" value={formatCurrency(stats.balance)} icon={Wallet} color={stats.balance >= 0 ? 'text-income' : 'text-expense'} />
+        <StatCard label="A Receber" value={formatCurrency(stats.toReceive)} icon={ArrowUpRight} color="text-income" />
+        <StatCard label="A Pagar" value={formatCurrency(stats.toPay)} icon={ArrowDownRight} color="text-expense" />
         <StatCard label="Economia" value={`${stats.savings.toFixed(0)}%`} icon={PiggyBank} color="text-foreground" trend={stats.savings > 20 ? '✨ Ótimo!' : 'Pode melhorar'} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Health Score */}
         <HealthScore score={stats.score} />
-
-        {/* Alerts */}
         <Card className="p-6 bg-card border-border lg:col-span-2 animate-fade-in">
           <h3 className="text-sm font-medium text-muted-foreground mb-4 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" /> Alertas & Insights
           </h3>
           {alerts.length === 0 ? (
-            <p className="text-muted-foreground text-sm">Nenhum alerta no momento. Continue assim! 🎉</p>
+            <p className="text-muted-foreground text-sm">Tudo certo! Continue assim! 🎉</p>
           ) : (
-            <ul className="space-y-3">
+            <ul className="space-y-2">
               {alerts.map((a, i) => (
-                <li key={i} className="text-sm text-foreground bg-secondary rounded-lg px-4 py-3">{a}</li>
+                <li key={i} className={`text-sm rounded-lg px-4 py-3 ${
+                  a.type === 'danger' ? 'bg-expense/10 text-expense' :
+                  a.type === 'warning' ? 'bg-warning/10 text-warning' :
+                  'bg-secondary text-foreground'
+                }`}>{a.text}</li>
               ))}
             </ul>
           )}
@@ -174,24 +259,20 @@ export default function Dashboard() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6 bg-card border-border animate-fade-in">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4">Receitas vs Despesas</h3>
+          <h3 className="text-sm font-medium text-muted-foreground mb-4">Receitas vs Despesas (Diário)</h3>
           {dailyData.length > 0 ? (
             <ResponsiveContainer width="100%" height={250}>
               <AreaChart data={dailyData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" fontSize={12} />
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                <Tooltip
-                  contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' }}
-                />
+                <Tooltip {...tooltipStyle} />
                 <Area type="monotone" dataKey="income" stroke="hsl(142, 60%, 45%)" fill="hsl(142, 60%, 45%)" fillOpacity={0.15} name="Receita" />
                 <Area type="monotone" dataKey="expense" stroke="hsl(0, 72%, 55%)" fill="hsl(0, 72%, 55%)" fillOpacity={0.15} name="Despesa" />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-[250px] text-muted-foreground text-sm">
-              Adicione transações para ver o gráfico
-            </div>
+            <div className="flex items-center justify-center h-[250px] text-muted-foreground text-sm">Sem dados neste período</div>
           )}
         </Card>
 
@@ -202,29 +283,76 @@ export default function Dashboard() {
               <ResponsiveContainer width="50%" height={200}>
                 <PieChart>
                   <Pie data={expenseByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
-                    {expenseByCategory.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                    ))}
+                    {expenseByCategory.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
               <div className="space-y-2 flex-1">
-                {expenseByCategory.slice(0, 5).map((cat, i) => (
+                {expenseByCategory.slice(0, 6).map((cat, i) => (
                   <div key={cat.name} className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
-                      <span className="text-foreground">{cat.name}</span>
+                      <span className="text-foreground truncate">{cat.name}</span>
                     </div>
-                    <span className="text-muted-foreground font-mono">{formatCurrency(cat.value)}</span>
+                    <span className="text-muted-foreground font-mono text-xs">{formatCurrency(cat.value)}</span>
                   </div>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-center h-[200px] text-muted-foreground text-sm">
-              Sem despesas neste período
-            </div>
+            <div className="flex items-center justify-center h-[200px] text-muted-foreground text-sm">Sem despesas neste período</div>
           )}
+        </Card>
+      </div>
+
+      {/* Recent Transactions + Goals */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="p-6 bg-card border-border animate-fade-in">
+          <h3 className="text-sm font-medium text-muted-foreground mb-4">Transações Recentes</h3>
+          <div className="space-y-3">
+            {transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth).slice(0, 8).map((t: any) => (
+              <div key={t.id} className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${t.type === 'income' ? 'bg-income/15' : 'bg-expense/15'}`}>
+                    {t.type === 'income' ? <TrendingUp className="w-4 h-4 text-income" /> : <TrendingDown className="w-4 h-4 text-expense" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{t.description}</p>
+                    <p className="text-xs text-muted-foreground">{(t as any).categories?.name || 'Sem categoria'}</p>
+                  </div>
+                </div>
+                <span className={`font-mono text-sm font-semibold ${t.type === 'income' ? 'text-income' : 'text-expense'}`}>
+                  {t.type === 'income' ? '+' : '-'}{formatCurrency(Number(t.amount))}
+                </span>
+              </div>
+            ))}
+            {transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth).length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">Sem transações neste mês</p>
+            )}
+          </div>
+        </Card>
+
+        <Card className="p-6 bg-card border-border animate-fade-in">
+          <h3 className="text-sm font-medium text-muted-foreground mb-4 flex items-center gap-2">
+            <Target className="w-4 h-4" /> Progresso das Metas
+          </h3>
+          <div className="space-y-4">
+            {goals.slice(0, 4).map((g: any) => {
+              const pct = Math.min(100, (Number(g.current_amount) / Number(g.target_amount)) * 100);
+              return (
+                <div key={g.id}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-foreground">{g.icon} {g.title}</span>
+                    <span className="text-xs text-muted-foreground font-mono">{pct.toFixed(0)}%</span>
+                  </div>
+                  <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                    <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+            {goals.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">Nenhuma meta definida</p>}
+          </div>
         </Card>
       </div>
     </div>
