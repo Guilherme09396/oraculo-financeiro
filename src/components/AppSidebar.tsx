@@ -8,6 +8,7 @@ import {
   CalendarClock,
   Target,
   Tags,
+  CreditCard,
   BarChart3,
   Bot,
   Settings,
