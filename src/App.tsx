@@ -16,6 +16,7 @@ import Goals from "@/pages/Goals";
 import Categories from "@/pages/Categories";
 import Reports from "@/pages/Reports";
 import Assistant from "@/pages/Assistant";
+import Cards from "@/pages/Cards";
 import SettingsPage from "@/pages/Settings";
 import NotFound from "./pages/NotFound";
 
