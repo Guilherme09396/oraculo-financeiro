@@ -9,11 +9,11 @@ import { Card } from '@/components/ui/card';
 import MonthSelector from '@/components/MonthSelector';
 import {
   TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight,
-  PiggyBank, Activity, AlertTriangle, Clock, Target,
+  PiggyBank, Activity, AlertTriangle, Clock, Target, DollarSign,
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, BarChart, Bar,
+  PieChart, Pie, Cell,
 } from 'recharts';
 
 const CHART_COLORS = [
@@ -105,12 +105,20 @@ export default function Dashboard() {
   const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
+  // Cumulative all-time balance
+  const cumulativeBalance = useMemo(() => {
+    const allIncome = transactions.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const allExpense = transactions.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const paidFutureIncome = futureItems.filter((f: any) => f.status === 'paid' && f.type === 'income').reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const paidFutureExpense = futureItems.filter((f: any) => f.status === 'paid' && f.type === 'expense').reduce((s: number, f: any) => s + Number(f.amount), 0);
+    return (allIncome + paidFutureIncome) - (allExpense + paidFutureExpense);
+  }, [transactions, futureItems]);
+
   const stats = useMemo(() => {
     const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth);
     const income = monthly.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + Number(t.amount), 0);
     const expenses = monthly.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + Number(t.amount), 0);
 
-    // Include paid future transactions in this month (by paid_at)
     const paidFuture = futureItems.filter((f: any) => {
       const paidAt = (f as any).paid_at;
       return f.status === 'paid' && paidAt && paidAt >= startOfMonth && paidAt <= endOfMonth;
@@ -123,12 +131,10 @@ export default function Dashboard() {
     const balance = totalIncome - totalExpenses;
     const savings = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome * 100) : 0;
 
-    // Pending future items
     const pendingFuture = futureItems.filter((f: any) => f.status === 'pending');
     const toReceive = pendingFuture.filter((f: any) => f.type === 'income').reduce((s: number, f: any) => s + Number(f.amount), 0);
     const toPay = pendingFuture.filter((f: any) => f.type === 'expense').reduce((s: number, f: any) => s + Number(f.amount), 0);
 
-    // Health score
     const goalsProgress = goals.length > 0
       ? goals.reduce((s: number, g: any) => s + Math.min(1, Number(g.current_amount) / Number(g.target_amount)), 0) / goals.length * 20
       : 10;
@@ -148,7 +154,6 @@ export default function Dashboard() {
       const name = (t as any).categories?.name || 'Sem categoria';
       map.set(name, (map.get(name) || 0) + Number(t.amount));
     });
-    // Add paid future expenses
     futureItems.filter((f: any) => {
       const paidAt = (f as any).paid_at;
       return f.status === 'paid' && f.type === 'expense' && paidAt && paidAt >= startOfMonth && paidAt <= endOfMonth;
@@ -176,26 +181,16 @@ export default function Dashboard() {
     const list: { text: string; type: 'warning' | 'info' | 'danger' }[] = [];
     const today = new Date().toISOString().split('T')[0];
 
-    // Overdue
     const overdue = futureItems.filter((f: any) => f.status === 'pending' && f.due_date < today);
-    if (overdue.length > 0) {
-      list.push({ text: `⚠️ Você possui ${overdue.length} conta(s) vencida(s) que ainda não foram pagas.`, type: 'danger' });
-    }
+    if (overdue.length > 0) list.push({ text: `⚠️ Você possui ${overdue.length} conta(s) vencida(s) que ainda não foram pagas.`, type: 'danger' });
 
-    // Upcoming due
     const nextWeek = new Date();
     nextWeek.setDate(nextWeek.getDate() + 7);
     const upcoming = futureItems.filter((f: any) => f.status === 'pending' && f.due_date >= today && f.due_date <= nextWeek.toISOString().split('T')[0]);
-    if (upcoming.length > 0) {
-      list.push({ text: `📅 ${upcoming.length} conta(s) vencem nos próximos 7 dias.`, type: 'warning' });
-    }
+    if (upcoming.length > 0) list.push({ text: `📅 ${upcoming.length} conta(s) vencem nos próximos 7 dias.`, type: 'warning' });
 
-    if (stats.expenses > stats.income && stats.income > 0) {
-      list.push({ text: '🚨 Seus gastos estão maiores que sua renda este mês!', type: 'danger' });
-    }
-    if (stats.savings < 10 && stats.income > 0) {
-      list.push({ text: '💡 Você está economizando menos de 10% da renda.', type: 'warning' });
-    }
+    if (stats.expenses > stats.income && stats.income > 0) list.push({ text: '🚨 Seus gastos estão maiores que sua renda este mês!', type: 'danger' });
+    if (stats.savings < 10 && stats.income > 0) list.push({ text: '💡 Você está economizando menos de 10% da renda.', type: 'warning' });
     if (expenseByCategory.length > 0) {
       const top = expenseByCategory[0];
       const pct = stats.expenses > 0 ? (top.value / stats.expenses * 100).toFixed(0) : 0;
@@ -224,11 +219,12 @@ export default function Dashboard() {
         <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
       </div>
 
-      {/* 6 Stat Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard label="Receitas" value={formatCurrency(stats.income)} icon={TrendingUp} color="text-income" />
-        <StatCard label="Despesas" value={formatCurrency(stats.expenses)} icon={TrendingDown} color="text-expense" />
-        <StatCard label="Saldo" value={formatCurrency(stats.balance)} icon={Wallet} color={stats.balance >= 0 ? 'text-income' : 'text-expense'} />
+      {/* Stat Cards - 7 cards with cumulative balance */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
+        <StatCard label="Receitas (mês)" value={formatCurrency(stats.income)} icon={TrendingUp} color="text-income" />
+        <StatCard label="Despesas (mês)" value={formatCurrency(stats.expenses)} icon={TrendingDown} color="text-expense" />
+        <StatCard label="Saldo do Mês" value={formatCurrency(stats.balance)} icon={Wallet} color={stats.balance >= 0 ? 'text-income' : 'text-expense'} />
+        <StatCard label="Saldo Geral" value={formatCurrency(cumulativeBalance)} icon={DollarSign} color={cumulativeBalance >= 0 ? 'text-income' : 'text-expense'} trend="Acumulado total" />
         <StatCard label="A Receber" value={formatCurrency(stats.toReceive)} icon={ArrowUpRight} color="text-income" />
         <StatCard label="A Pagar" value={formatCurrency(stats.toPay)} icon={ArrowDownRight} color="text-expense" />
         <StatCard label="Economia" value={`${stats.savings.toFixed(0)}%`} icon={PiggyBank} color="text-foreground" trend={stats.savings > 20 ? '✨ Ótimo!' : 'Pode melhorar'} />

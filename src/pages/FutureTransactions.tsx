@@ -16,7 +16,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
-import { Plus, Trash2, CheckCircle, Clock, AlertCircle, CalendarClock, Pencil, Undo2, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, Clock, CalendarClock, Pencil, Undo2, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 
 function useFutureTransactions() {
@@ -33,7 +33,7 @@ function useFutureTransactions() {
   });
 }
 
-function FutureDialog({ item, onClose }: { item?: any; onClose: () => void }) {
+function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () => void; cascadeEdit?: boolean }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const { data: categories = [] } = useCategories();
@@ -63,22 +63,37 @@ function FutureDialog({ item, onClose }: { item?: any; onClose: () => void }) {
   const mut = useMutation({
     mutationFn: async () => {
       if (isEditing) {
-        const { error } = await supabase.from('future_transactions').update({
+        const updateData: any = {
           description: desc, amount: parseFloat(amount), type, category_id: categoryId || null,
-          due_date: dueDate, is_recurring: isRecurring, recurring_period: isRecurring ? recurringPeriod : null,
+          is_recurring: isRecurring, recurring_period: isRecurring ? recurringPeriod : null,
           receipt_url: receiptUrl || null,
-        } as any).eq('id', item.id);
-        if (error) throw error;
+        };
+        
+        // If it's an installment and cascadeEdit, update all siblings
+        if (item.is_installment && item.installment_group && cascadeEdit) {
+          // Update all in same group with shared fields (but keep individual due_date, current_installment)
+          const { error } = await supabase.from('future_transactions')
+            .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null })
+            .eq('installment_group', item.installment_group);
+          if (error) throw error;
+        } else {
+          // Also update due_date for single items
+          updateData.due_date = dueDate;
+          const { error } = await supabase.from('future_transactions').update(updateData).eq('id', item.id);
+          if (error) throw error;
+        }
       } else if (isInstallment && totalInstallments) {
         const total = parseInt(totalInstallments);
         const instAmount = parseFloat(amount) / total;
+        const groupId = crypto.randomUUID();
         const rows = Array.from({ length: total }, (_, i) => {
           const d = new Date(dueDate);
           d.setMonth(d.getMonth() + i);
           return {
             user_id: user!.id, description: desc, amount: instAmount, type,
             category_id: categoryId || null, due_date: d.toISOString().split('T')[0],
-            is_installment: true, total_installments: total, current_installment: i + 1, status: 'pending',
+            is_installment: true, total_installments: total, current_installment: i + 1,
+            status: 'pending', installment_group: groupId,
           };
         });
         const { error } = await supabase.from('future_transactions').insert(rows);
@@ -119,6 +134,12 @@ function FutureDialog({ item, onClose }: { item?: any; onClose: () => void }) {
           </Select>
         </div>
       </div>
+      {isEditing && item?.is_installment && item?.installment_group && (
+        <div className="bg-secondary/50 rounded-lg p-3 text-sm text-muted-foreground">
+          ℹ️ Esta é uma parcela ({item.current_installment}/{item.total_installments}). 
+          {cascadeEdit ? ' As alterações serão aplicadas em todas as parcelas.' : ''}
+        </div>
+      )}
       {!isEditing && (
         <Card className="p-4 bg-secondary border-border space-y-4">
           <div className="flex items-center justify-between">
@@ -152,6 +173,43 @@ function FutureDialog({ item, onClose }: { item?: any; onClose: () => void }) {
   );
 }
 
+// Dialog to pick payment date when marking as paid
+function PaymentDateDialog({ item, onClose }: { item: any; onClose: () => void }) {
+  const qc = useQueryClient();
+  const today = new Date().toISOString().split('T')[0];
+  const [paidDate, setPaidDate] = useState(today);
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('future_transactions')
+        .update({ status: 'paid', paid_at: paidDate } as any)
+        .eq('id', item.id);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['future_transactions'] }); toast.success('Pagamento registrado!'); onClose(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        <strong className="text-foreground">{item.description}</strong> — {formatCurrency(Number(item.amount))}
+      </p>
+      <p className="text-sm text-muted-foreground">Vencimento: {formatDate(item.due_date)}</p>
+      <div className="space-y-2">
+        <Label>Data do Pagamento</Label>
+        <Input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} className="bg-secondary border-border" />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        💡 A conta será contabilizada nos relatórios do mês do pagamento, não do vencimento.
+      </p>
+      <Button onClick={() => mut.mutate()} className="w-full gradient-primary" disabled={mut.isPending}>
+        {mut.isPending ? 'Registrando...' : 'Confirmar Pagamento'}
+      </Button>
+    </div>
+  );
+}
+
 export default function FutureTransactions() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
@@ -160,6 +218,8 @@ export default function FutureTransactions() {
   const { data: items = [], isLoading } = useFutureTransactions();
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [cascadeEdit, setCascadeEdit] = useState(false);
+  const [payingItem, setPayingItem] = useState<any>(null);
 
   const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
@@ -168,22 +228,25 @@ export default function FutureTransactions() {
   const pending = monthItems.filter((i: any) => i.status !== 'paid');
   const paid = monthItems.filter((i: any) => i.status === 'paid');
 
-  const toggleStatus = useMutation({
-    mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: string }) => {
-      const newStatus = currentStatus === 'paid' ? 'pending' : 'paid';
-      const update: any = { status: newStatus };
-      if (newStatus === 'paid') update.paid_at = new Date().toISOString().split('T')[0];
-      else update.paid_at = null;
-      const { error } = await supabase.from('future_transactions').update(update).eq('id', id);
+  const undoPayment = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('future_transactions')
+        .update({ status: 'pending', paid_at: null } as any).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['future_transactions'] }); toast.success('Status atualizado!'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['future_transactions'] }); toast.success('Pagamento desfeito!'); },
   });
 
   const deleteMut = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('future_transactions').delete().eq('id', id);
-      if (error) throw error;
+    mutationFn: async ({ id, installmentGroup }: { id: string; installmentGroup?: string }) => {
+      if (installmentGroup) {
+        // Delete all installments in the group
+        const { error } = await supabase.from('future_transactions').delete().eq('installment_group', installmentGroup);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('future_transactions').delete().eq('id', id);
+        if (error) throw error;
+      }
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['future_transactions'] }); toast.success('Removido!'); },
   });
@@ -191,7 +254,26 @@ export default function FutureTransactions() {
   const toReceive = pending.filter((i: any) => i.type === 'income').reduce((s: number, i: any) => s + Number(i.amount), 0);
   const toPay = pending.filter((i: any) => i.type === 'expense').reduce((s: number, i: any) => s + Number(i.amount), 0);
 
-  const renderItem = (item: any, showToggle: boolean) => (
+  const handleEdit = (item: any) => {
+    if (item.is_installment && item.installment_group) {
+      setCascadeEdit(true);
+    } else {
+      setCascadeEdit(false);
+    }
+    setEditing(item);
+  };
+
+  const handleDelete = (item: any) => {
+    if (item.is_installment && item.installment_group) {
+      if (confirm(`Deseja excluir todas as ${item.total_installments} parcelas de "${item.description}"?`)) {
+        deleteMut.mutate({ id: item.id, installmentGroup: item.installment_group });
+      }
+    } else {
+      deleteMut.mutate({ id: item.id });
+    }
+  };
+
+  const renderItem = (item: any) => (
     <div key={item.id} className="flex items-center justify-between px-5 py-4 hover:bg-secondary/50 transition-colors">
       <div className="flex items-center gap-4">
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.status === 'paid' ? 'bg-income/10' : 'bg-secondary'}`}>
@@ -203,9 +285,10 @@ export default function FutureTransactions() {
             {item.is_installment && ` (${item.current_installment}/${item.total_installments})`}
           </p>
           <p className="text-xs text-muted-foreground">
-            {formatDate(item.due_date)} · {(item as any).categories?.name || 'Sem categoria'}
+            Vence: {formatDate(item.due_date)} · {(item as any).categories?.name || 'Sem categoria'}
             {item.is_recurring && ' · 🔄'}
             {(item as any).receipt_url && ' · 📎'}
+            {item.status === 'paid' && (item as any).paid_at && ` · Pago: ${formatDate((item as any).paid_at)}`}
           </p>
         </div>
       </div>
@@ -213,12 +296,19 @@ export default function FutureTransactions() {
         <span className={`font-mono font-semibold ${item.type === 'income' ? 'text-income' : 'text-expense'}`}>
           {item.type === 'income' ? '+' : '-'}{formatCurrency(Number(item.amount))}
         </span>
-        <Button variant="ghost" size="icon" className="h-8 w-8" title={item.status === 'paid' ? 'Desfazer pagamento' : 'Marcar como pago'}
-          onClick={() => toggleStatus.mutate({ id: item.id, currentStatus: item.status })}>
-          {item.status === 'paid' ? <Undo2 className="w-3.5 h-3.5 text-muted-foreground" /> : <CheckCircle className="w-3.5 h-3.5 text-income" />}
-        </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditing(item)}><Pencil className="w-3.5 h-3.5" /></Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-destructive" onClick={() => deleteMut.mutate(item.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+        {item.status === 'paid' ? (
+          <Button variant="ghost" size="icon" className="h-8 w-8" title="Desfazer pagamento"
+            onClick={() => undoPayment.mutate(item.id)}>
+            <Undo2 className="w-3.5 h-3.5 text-muted-foreground" />
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon" className="h-8 w-8" title="Marcar como pago"
+            onClick={() => setPayingItem(item)}>
+            <CheckCircle className="w-3.5 h-3.5 text-income" />
+          </Button>
+        )}
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(item)}><Pencil className="w-3.5 h-3.5" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-destructive" onClick={() => handleDelete(item)}><Trash2 className="w-3.5 h-3.5" /></Button>
       </div>
     </div>
   );
@@ -257,30 +347,37 @@ export default function FutureTransactions() {
         </Card>
       </div>
 
-      {/* Pending */}
       <div>
         <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2"><Clock className="w-5 h-5" /> Pendentes ({pending.length})</h2>
         <Card className="bg-card border-border overflow-hidden">
           {isLoading ? <div className="p-8 text-center text-muted-foreground">Carregando...</div>
           : pending.length === 0 ? <div className="p-8 text-center text-muted-foreground">Nenhum lançamento pendente neste mês</div>
-          : <div className="divide-y divide-border">{pending.map(i => renderItem(i, true))}</div>}
+          : <div className="divide-y divide-border">{pending.map(i => renderItem(i))}</div>}
         </Card>
       </div>
 
-      {/* Paid */}
       {paid.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2"><CheckCircle className="w-5 h-5 text-income" /> Pagos ({paid.length})</h2>
           <Card className="bg-card border-border overflow-hidden">
-            <div className="divide-y divide-border">{paid.map(i => renderItem(i, true))}</div>
+            <div className="divide-y divide-border">{paid.map(i => renderItem(i))}</div>
           </Card>
         </div>
       )}
 
+      {/* Edit dialog */}
       <Dialog open={!!editing} onOpenChange={open => !open && setEditing(null)}>
         <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Editar Lançamento</DialogTitle></DialogHeader>
-          {editing && <FutureDialog item={editing} onClose={() => setEditing(null)} />}
+          {editing && <FutureDialog item={editing} onClose={() => setEditing(null)} cascadeEdit={cascadeEdit} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment date dialog */}
+      <Dialog open={!!payingItem} onOpenChange={open => !open && setPayingItem(null)}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader><DialogTitle>Registrar Pagamento</DialogTitle></DialogHeader>
+          {payingItem && <PaymentDateDialog item={payingItem} onClose={() => setPayingItem(null)} />}
         </DialogContent>
       </Dialog>
     </div>

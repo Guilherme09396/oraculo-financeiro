@@ -16,6 +16,7 @@ import Goals from "@/pages/Goals";
 import Categories from "@/pages/Categories";
 import Reports from "@/pages/Reports";
 import Assistant from "@/pages/Assistant";
+import Cards from "@/pages/Cards";
 import SettingsPage from "@/pages/Settings";
 import NotFound from "./pages/NotFound";
 
@@ -45,6 +46,7 @@ const App = () => (
               <Route path="/future" element={<FutureTransactions />} />
               <Route path="/goals" element={<Goals />} />
               <Route path="/categories" element={<Categories />} />
+              <Route path="/cards" element={<Cards />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/assistant" element={<Assistant />} />
               <Route path="/settings" element={<SettingsPage />} />

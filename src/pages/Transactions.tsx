@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTransactions, useCreateTransaction, useDeleteTransaction, useUpdateTransaction } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
 import { useAuth } from '@/lib/auth';
+import { useQuery } from '@tanstack/react-query';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { Card } from '@/components/ui/card';
@@ -30,10 +31,19 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
   const [paymentMethod, setPaymentMethod] = useState(transaction?.payment_method || '');
   const [notes, setNotes] = useState(transaction?.notes || '');
   const [receiptUrl, setReceiptUrl] = useState((transaction as any)?.receipt_url || '');
+  const [cardId, setCardId] = useState((transaction as any)?.card_id || '');
   const [uploading, setUploading] = useState(false);
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const { data: categories = [] } = useCategories(type);
+  const { data: cards = [] } = useQuery({
+    queryKey: ['credit_cards'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('credit_cards').select('*').order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
 
   const handleReceiptUpload = async (file: File) => {
     if (!user) return;
@@ -52,6 +62,7 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
     const data: any = {
       description, amount: parseFloat(amount), type, category_id: categoryId || null,
       date, payment_method: paymentMethod || null, notes: notes || null, receipt_url: receiptUrl || null,
+      card_id: cardId || null,
     };
     if (isEditing) {
       update.mutate({ id: transaction.id, ...data }, { onSuccess: onClose });
@@ -97,18 +108,32 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
           </Select>
         </div>
       </div>
-      <div className="space-y-2">
-        <Label>Forma de Pagamento</Label>
-        <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-          <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="pix">PIX</SelectItem>
-            <SelectItem value="credit_card">Cartão de Crédito</SelectItem>
-            <SelectItem value="debit_card">Cartão de Débito</SelectItem>
-            <SelectItem value="cash">Dinheiro</SelectItem>
-            <SelectItem value="transfer">Transferência</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Forma de Pagamento</Label>
+          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+            <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pix">PIX</SelectItem>
+              <SelectItem value="credit_card">Cartão de Crédito</SelectItem>
+              <SelectItem value="debit_card">Cartão de Débito</SelectItem>
+              <SelectItem value="cash">Dinheiro</SelectItem>
+              <SelectItem value="transfer">Transferência</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {type === 'expense' && cards.length > 0 && (
+          <div className="space-y-2">
+            <Label>Cartão</Label>
+            <Select value={cardId} onValueChange={setCardId}>
+              <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Nenhum" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Nenhum</SelectItem>
+                {cards.map((c: any) => <SelectItem key={c.id} value={c.id}>💳 {c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
       <div className="space-y-2">
         <Label>Observações</Label>

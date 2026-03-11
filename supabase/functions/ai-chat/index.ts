@@ -15,7 +15,7 @@ serve(async (req) => {
     if (!authHeader) throw new Error("Missing authorization");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -25,7 +25,7 @@ serve(async (req) => {
 
     const [{ data: transactions }, { data: futureTransactions }, { data: categories }, { data: profile }] = await Promise.all([
       supabase.from("transactions").select("description, amount, type, date, categories(name)").order("date", { ascending: false }).limit(50),
-      supabase.from("future_transactions").select("description, amount, type, due_date, status").order("due_date", { ascending: false }).limit(30),
+      supabase.from("future_transactions").select("description, amount, type, due_date, status, paid_at").order("due_date", { ascending: false }).limit(30),
       supabase.from("categories").select("id, name, type"),
       supabase.from("profiles").select("display_name").eq("user_id", user.id).single(),
     ]);
@@ -86,7 +86,7 @@ INSTRUÇÕES:
       method: "POST",
       headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-3-flash-preview",
         messages: [{ role: "system", content: systemPrompt }, ...messages],
         tools,
       }),
@@ -94,10 +94,11 @@ INSTRUÇÕES:
 
     if (!aiRes.ok) {
       const s = aiRes.status;
-      if (s === 429) return new Response(JSON.stringify({ error: "Limite de requisições excedido. Tente novamente." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      if (s === 402) return new Response(JSON.stringify({ error: "Créditos esgotados." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      console.error("AI error:", s, await aiRes.text());
-      throw new Error("AI gateway error");
+      if (s === 429) return new Response(JSON.stringify({ error: "Limite de requisições excedido. Tente novamente em alguns segundos." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (s === 402) return new Response(JSON.stringify({ error: "Créditos de IA esgotados." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const errText = await aiRes.text();
+      console.error("AI error:", s, errText);
+      throw new Error(`AI gateway error: ${s}`);
     }
 
     const result = await aiRes.json();
@@ -124,21 +125,21 @@ INSTRUÇÕES:
       const toolResults = choice.message.tool_calls.map((tc: any, i: number) => ({
         role: "tool",
         tool_call_id: tc.id,
-        content: JSON.stringify(actions[i]?.type === "error" ? { success: false } : { success: true }),
+        content: JSON.stringify(actions[i]?.type === "error" ? { success: false, error: actions[i].message } : { success: true, data: actions[i]?.data }),
       }));
 
       const followUp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
+          model: "google/gemini-3-flash-preview",
           messages: [{ role: "system", content: systemPrompt }, ...messages, choice.message, ...toolResults],
         }),
       });
 
       if (followUp.ok) {
         const fr = await followUp.json();
-        responseText = fr.choices[0]?.message?.content || "Transação registrada!";
+        responseText = fr.choices[0]?.message?.content || "Transação registrada com sucesso! ✅";
       }
     }
 
