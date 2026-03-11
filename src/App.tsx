@@ -46,6 +46,7 @@ const App = () => (
               <Route path="/future" element={<FutureTransactions />} />
               <Route path="/goals" element={<Goals />} />
               <Route path="/categories" element={<Categories />} />
+              <Route path="/cards" element={<Cards />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/assistant" element={<Assistant />} />
               <Route path="/settings" element={<SettingsPage />} />

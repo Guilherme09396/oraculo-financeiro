@@ -108,18 +108,32 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
           </Select>
         </div>
       </div>
-      <div className="space-y-2">
-        <Label>Forma de Pagamento</Label>
-        <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-          <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="pix">PIX</SelectItem>
-            <SelectItem value="credit_card">Cartão de Crédito</SelectItem>
-            <SelectItem value="debit_card">Cartão de Débito</SelectItem>
-            <SelectItem value="cash">Dinheiro</SelectItem>
-            <SelectItem value="transfer">Transferência</SelectItem>
-          </SelectContent>
-        </Select>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Forma de Pagamento</Label>
+          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+            <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pix">PIX</SelectItem>
+              <SelectItem value="credit_card">Cartão de Crédito</SelectItem>
+              <SelectItem value="debit_card">Cartão de Débito</SelectItem>
+              <SelectItem value="cash">Dinheiro</SelectItem>
+              <SelectItem value="transfer">Transferência</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {type === 'expense' && cards.length > 0 && (
+          <div className="space-y-2">
+            <Label>Cartão</Label>
+            <Select value={cardId} onValueChange={setCardId}>
+              <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Nenhum" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Nenhum</SelectItem>
+                {cards.map((c: any) => <SelectItem key={c.id} value={c.id}>💳 {c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
       <div className="space-y-2">
         <Label>Observações</Label>

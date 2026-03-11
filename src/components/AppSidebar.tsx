@@ -27,6 +27,7 @@ const navItems = [
   { to: '/future', label: 'Lançamentos Futuros', icon: CalendarClock },
   { to: '/goals', label: 'Metas', icon: Target },
   { to: '/categories', label: 'Categorias', icon: Tags },
+  { to: '/cards', label: 'Cartões', icon: CreditCard },
   { to: '/reports', label: 'Relatórios', icon: BarChart3 },
   { to: '/assistant', label: 'Assistente IA', icon: Bot },
   { to: '/settings', label: 'Configurações', icon: Settings },
