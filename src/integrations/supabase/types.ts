@@ -50,15 +50,56 @@ export type Database = {
         }
         Relationships: []
       }
+      credit_cards: {
+        Row: {
+          card_limit: number
+          closing_day: number
+          color: string | null
+          created_at: string
+          due_day: number
+          icon: string | null
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          card_limit?: number
+          closing_day?: number
+          color?: string | null
+          created_at?: string
+          due_day?: number
+          icon?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          card_limit?: number
+          closing_day?: number
+          color?: string | null
+          created_at?: string
+          due_day?: number
+          icon?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       future_transactions: {
         Row: {
           amount: number
+          card_id: string | null
           category_id: string | null
           created_at: string
           current_installment: number | null
           description: string
           due_date: string
           id: string
+          installment_group: string | null
           is_installment: boolean | null
           is_recurring: boolean | null
           paid_at: string | null
@@ -72,12 +113,14 @@ export type Database = {
         }
         Insert: {
           amount: number
+          card_id?: string | null
           category_id?: string | null
           created_at?: string
           current_installment?: number | null
           description: string
           due_date: string
           id?: string
+          installment_group?: string | null
           is_installment?: boolean | null
           is_recurring?: boolean | null
           paid_at?: string | null
@@ -91,12 +134,14 @@ export type Database = {
         }
         Update: {
           amount?: number
+          card_id?: string | null
           category_id?: string | null
           created_at?: string
           current_installment?: number | null
           description?: string
           due_date?: string
           id?: string
+          installment_group?: string | null
           is_installment?: boolean | null
           is_recurring?: boolean | null
           paid_at?: string | null
@@ -109,6 +154,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "future_transactions_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "credit_cards"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "future_transactions_category_id_fkey"
             columns: ["category_id"]
@@ -190,6 +242,7 @@ export type Database = {
       transactions: {
         Row: {
           amount: number
+          card_id: string | null
           category_id: string | null
           created_at: string
           date: string
@@ -204,6 +257,7 @@ export type Database = {
         }
         Insert: {
           amount: number
+          card_id?: string | null
           category_id?: string | null
           created_at?: string
           date?: string
@@ -218,6 +272,7 @@ export type Database = {
         }
         Update: {
           amount?: number
+          card_id?: string | null
           category_id?: string | null
           created_at?: string
           date?: string
@@ -231,6 +286,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "transactions_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "credit_cards"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "transactions_category_id_fkey"
             columns: ["category_id"]
