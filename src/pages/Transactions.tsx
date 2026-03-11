@@ -62,6 +62,7 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
     const data: any = {
       description, amount: parseFloat(amount), type, category_id: categoryId || null,
       date, payment_method: paymentMethod || null, notes: notes || null, receipt_url: receiptUrl || null,
+      card_id: cardId || null,
     };
     if (isEditing) {
       update.mutate({ id: transaction.id, ...data }, { onSuccess: onClose });
