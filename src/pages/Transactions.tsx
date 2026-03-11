@@ -31,10 +31,19 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
   const [paymentMethod, setPaymentMethod] = useState(transaction?.payment_method || '');
   const [notes, setNotes] = useState(transaction?.notes || '');
   const [receiptUrl, setReceiptUrl] = useState((transaction as any)?.receipt_url || '');
+  const [cardId, setCardId] = useState((transaction as any)?.card_id || '');
   const [uploading, setUploading] = useState(false);
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const { data: categories = [] } = useCategories(type);
+  const { data: cards = [] } = useQuery({
+    queryKey: ['credit_cards'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('credit_cards').select('*').order('name');
+      if (error) throw error;
+      return data;
+    },
+  });
 
   const handleReceiptUpload = async (file: File) => {
     if (!user) return;
