@@ -10,13 +10,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import MonthSelector from '@/components/MonthSelector';
+import ReceiptPreviewDialog from '@/components/ReceiptPreviewDialog';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
-import { Plus, Trash2, CheckCircle, Clock, CalendarClock, Pencil, Undo2, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, Clock, CalendarClock, Pencil, Undo2, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
 function useFutureTransactions() {
@@ -68,18 +69,15 @@ function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () 
           is_recurring: isRecurring, recurring_period: isRecurring ? recurringPeriod : null,
           receipt_url: receiptUrl || null,
         };
-        
-        // If it's an installment and cascadeEdit, update all siblings
+
         if (item.is_installment && item.installment_group && cascadeEdit) {
-          // Update all in same group with shared fields (but keep individual due_date, current_installment)
           const { error } = await supabase.from('future_transactions')
             .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null })
             .eq('installment_group', item.installment_group);
           if (error) throw error;
         } else {
-          // Also update due_date for single items
-          updateData.due_date = dueDate;
-          const { error } = await supabase.from('future_transactions').update(updateData).eq('id', item.id);
+          updateData.due_date = dueDate + 'T12:00:00';
+          const { error } = await supabase.from('future_transactions').update({ ...updateData, due_date: dueDate }).eq('id', item.id);
           if (error) throw error;
         }
       } else if (isInstallment && totalInstallments) {
@@ -87,15 +85,36 @@ function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () 
         const instAmount = parseFloat(amount) / total;
         const groupId = crypto.randomUUID();
         const rows = Array.from({ length: total }, (_, i) => {
-          const d = new Date(dueDate);
+          const d = new Date(dueDate + 'T12:00:00');
           d.setMonth(d.getMonth() + i);
           return {
             user_id: user!.id, description: desc, amount: instAmount, type,
-            category_id: categoryId || null, due_date: d.toISOString().split('T')[0],
+            category_id: categoryId || null, due_date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
             is_installment: true, total_installments: total, current_installment: i + 1,
             status: 'pending', installment_group: groupId,
           };
         });
+        const { error } = await supabase.from('future_transactions').insert(rows);
+        if (error) throw error;
+      } else if (isRecurring && recurringPeriod === 'monthly') {
+        // Create entries for the remaining months of the current year + full next year
+        const startD = new Date(dueDate + 'T12:00:00');
+        const endYear = startD.getFullYear() + 1;
+        const rows: any[] = [];
+        const d = new Date(startD);
+        while (d.getFullYear() <= endYear) {
+          rows.push({
+            user_id: user!.id, description: desc, amount: parseFloat(amount), type,
+            category_id: categoryId || null,
+            due_date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+            is_recurring: true, recurring_period: 'monthly', status: 'pending',
+            installment_group: crypto.randomUUID(), // use a shared group for recurring
+          });
+          d.setMonth(d.getMonth() + 1);
+        }
+        // Set a shared recurring group
+        const recurringGroup = crypto.randomUUID();
+        rows.forEach(r => r.installment_group = recurringGroup);
         const { error } = await supabase.from('future_transactions').insert(rows);
         if (error) throw error;
       } else {
@@ -136,14 +155,14 @@ function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () 
       </div>
       {isEditing && item?.is_installment && item?.installment_group && (
         <div className="bg-secondary/50 rounded-lg p-3 text-sm text-muted-foreground">
-          ℹ️ Esta é uma parcela ({item.current_installment}/{item.total_installments}). 
+          ℹ️ Parcela ({item.current_installment}/{item.total_installments}).
           {cascadeEdit ? ' As alterações serão aplicadas em todas as parcelas.' : ''}
         </div>
       )}
       {!isEditing && (
         <Card className="p-4 bg-secondary border-border space-y-4">
           <div className="flex items-center justify-between">
-            <div><p className="text-sm font-medium text-foreground">Recorrente</p><p className="text-xs text-muted-foreground">Repete automaticamente</p></div>
+            <div><p className="text-sm font-medium text-foreground">Recorrente</p><p className="text-xs text-muted-foreground">Cria para todos os meses</p></div>
             <Switch checked={isRecurring} onCheckedChange={c => { setIsRecurring(c); if (c) setIsInstallment(false); }} />
           </div>
           {isRecurring && (
@@ -163,7 +182,7 @@ function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () 
         <Label>Comprovante</Label>
         {receiptUrl ? (
           <div className="flex items-center gap-2">
-            <a href={receiptUrl} target="_blank" rel="noopener" className="text-primary text-sm underline flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Ver</a>
+            <span className="text-primary text-sm">✅ Comprovante anexado</span>
             <Button type="button" variant="ghost" size="sm" onClick={() => setReceiptUrl('')}>Remover</Button>
           </div>
         ) : <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />}
@@ -173,7 +192,6 @@ function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () 
   );
 }
 
-// Dialog to pick payment date when marking as paid
 function PaymentDateDialog({ item, onClose }: { item: any; onClose: () => void }) {
   const qc = useQueryClient();
   const today = new Date().toISOString().split('T')[0];
@@ -201,7 +219,7 @@ function PaymentDateDialog({ item, onClose }: { item: any; onClose: () => void }
         <Input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} className="bg-secondary border-border" />
       </div>
       <p className="text-xs text-muted-foreground">
-        💡 A conta será contabilizada nos relatórios do mês do pagamento, não do vencimento.
+        💡 A conta será contabilizada nos relatórios do mês do pagamento.
       </p>
       <Button onClick={() => mut.mutate()} className="w-full gradient-primary" disabled={mut.isPending}>
         {mut.isPending ? 'Registrando...' : 'Confirmar Pagamento'}
@@ -220,6 +238,7 @@ export default function FutureTransactions() {
   const [editing, setEditing] = useState<any>(null);
   const [cascadeEdit, setCascadeEdit] = useState(false);
   const [payingItem, setPayingItem] = useState<any>(null);
+  const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
 
   const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
@@ -238,8 +257,15 @@ export default function FutureTransactions() {
   });
 
   const deleteMut = useMutation({
-    mutationFn: async ({ id, installmentGroup }: { id: string; installmentGroup?: string }) => {
-      if (installmentGroup) {
+    mutationFn: async ({ id, installmentGroup, isRecurring, dueDate: itemDueDate }: { id: string; installmentGroup?: string; isRecurring?: boolean; dueDate?: string }) => {
+      if (isRecurring && installmentGroup && itemDueDate) {
+        // Delete this item and all future items in the group (keep past ones)
+        const { error } = await supabase.from('future_transactions')
+          .delete()
+          .eq('installment_group', installmentGroup)
+          .gte('due_date', itemDueDate);
+        if (error) throw error;
+      } else if (installmentGroup && !isRecurring) {
         // Delete all installments in the group
         const { error } = await supabase.from('future_transactions').delete().eq('installment_group', installmentGroup);
         if (error) throw error;
@@ -255,16 +281,16 @@ export default function FutureTransactions() {
   const toPay = pending.filter((i: any) => i.type === 'expense').reduce((s: number, i: any) => s + Number(i.amount), 0);
 
   const handleEdit = (item: any) => {
-    if (item.is_installment && item.installment_group) {
-      setCascadeEdit(true);
-    } else {
-      setCascadeEdit(false);
-    }
+    setCascadeEdit(!!(item.is_installment && item.installment_group));
     setEditing(item);
   };
 
   const handleDelete = (item: any) => {
-    if (item.is_installment && item.installment_group) {
+    if (item.is_recurring && item.installment_group) {
+      if (confirm(`Deseja excluir "${item.description}" deste mês em diante? (os anteriores serão mantidos)`)) {
+        deleteMut.mutate({ id: item.id, installmentGroup: item.installment_group, isRecurring: true, dueDate: item.due_date });
+      }
+    } else if (item.is_installment && item.installment_group) {
       if (confirm(`Deseja excluir todas as ${item.total_installments} parcelas de "${item.description}"?`)) {
         deleteMut.mutate({ id: item.id, installmentGroup: item.installment_group });
       }
@@ -274,28 +300,33 @@ export default function FutureTransactions() {
   };
 
   const renderItem = (item: any) => (
-    <div key={item.id} className="flex items-center justify-between px-5 py-4 hover:bg-secondary/50 transition-colors">
-      <div className="flex items-center gap-4">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.status === 'paid' ? 'bg-income/10' : 'bg-secondary'}`}>
-          {item.status === 'paid' ? <CheckCircle className="w-5 h-5 text-income" /> : <CalendarClock className="w-5 h-5 text-muted-foreground" />}
+    <div key={item.id} className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 hover:bg-secondary/50 transition-colors gap-2">
+      <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+        <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 ${item.status === 'paid' ? 'bg-income/10' : 'bg-secondary'}`}>
+          {item.status === 'paid' ? <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-income" /> : <CalendarClock className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />}
         </div>
-        <div>
-          <p className="font-medium text-foreground">
+        <div className="min-w-0">
+          <p className="font-medium text-foreground text-sm sm:text-base truncate">
             {item.description}
             {item.is_installment && ` (${item.current_installment}/${item.total_installments})`}
+            {item.is_recurring && ' 🔄'}
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground truncate">
             Vence: {formatDate(item.due_date)} · {(item as any).categories?.name || 'Sem categoria'}
-            {item.is_recurring && ' · 🔄'}
-            {(item as any).receipt_url && ' · 📎'}
             {item.status === 'paid' && (item as any).paid_at && ` · Pago: ${formatDate((item as any).paid_at)}`}
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span className={`font-mono font-semibold ${item.type === 'income' ? 'text-income' : 'text-expense'}`}>
+      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+        <span className={`font-mono font-semibold text-sm ${item.type === 'income' ? 'text-income' : 'text-expense'}`}>
           {item.type === 'income' ? '+' : '-'}{formatCurrency(Number(item.amount))}
         </span>
+        {(item as any).receipt_url && (
+          <Button variant="ghost" size="icon" className="h-8 w-8" title="Ver comprovante"
+            onClick={() => setPreviewReceipt((item as any).receipt_url)}>
+            <FileText className="w-3.5 h-3.5 text-primary" />
+          </Button>
+        )}
         {item.status === 'paid' ? (
           <Button variant="ghost" size="icon" className="h-8 w-8" title="Desfazer pagamento"
             onClick={() => undoPayment.mutate(item.id)}>
@@ -307,8 +338,8 @@ export default function FutureTransactions() {
             <CheckCircle className="w-3.5 h-3.5 text-income" />
           </Button>
         )}
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(item)}><Pencil className="w-3.5 h-3.5" /></Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-destructive" onClick={() => handleDelete(item)}><Trash2 className="w-3.5 h-3.5" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8 hidden sm:flex" onClick={() => handleEdit(item)}><Pencil className="w-3.5 h-3.5" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8 hidden sm:flex hover:text-destructive" onClick={() => handleDelete(item)}><Trash2 className="w-3.5 h-3.5" /></Button>
       </div>
     </div>
   );
@@ -317,13 +348,13 @@ export default function FutureTransactions() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Lançamentos Futuros</h1>
-          <p className="text-muted-foreground">Gerencie suas contas e parcelas</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Lançamentos Futuros</h1>
+          <p className="text-sm text-muted-foreground">Gerencie suas contas e parcelas</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
           <Dialog open={showCreate} onOpenChange={setShowCreate}>
-            <DialogTrigger asChild><Button className="gradient-primary gap-2"><Plus className="w-4 h-4" /> Novo</Button></DialogTrigger>
+            <DialogTrigger asChild><Button className="gradient-primary gap-2"><Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo</span></Button></DialogTrigger>
             <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Novo Lançamento Futuro</DialogTitle></DialogHeader>
               <FutureDialog onClose={() => setShowCreate(false)} />
@@ -333,17 +364,17 @@ export default function FutureTransactions() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="p-5 bg-card border-border">
+        <Card className="p-4 sm:p-5 bg-card border-border">
           <p className="text-sm text-muted-foreground">A Receber</p>
-          <p className="text-2xl font-bold text-income mt-1">{formatCurrency(toReceive)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-income mt-1">{formatCurrency(toReceive)}</p>
         </Card>
-        <Card className="p-5 bg-card border-border">
+        <Card className="p-4 sm:p-5 bg-card border-border">
           <p className="text-sm text-muted-foreground">A Pagar</p>
-          <p className="text-2xl font-bold text-expense mt-1">{formatCurrency(toPay)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-expense mt-1">{formatCurrency(toPay)}</p>
         </Card>
-        <Card className="p-5 bg-card border-border">
+        <Card className="p-4 sm:p-5 bg-card border-border">
           <p className="text-sm text-muted-foreground">Total no Mês</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{monthItems.length} lançamento(s)</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground mt-1">{monthItems.length} lançamento(s)</p>
         </Card>
       </div>
 
@@ -365,7 +396,6 @@ export default function FutureTransactions() {
         </div>
       )}
 
-      {/* Edit dialog */}
       <Dialog open={!!editing} onOpenChange={open => !open && setEditing(null)}>
         <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Editar Lançamento</DialogTitle></DialogHeader>
@@ -373,13 +403,14 @@ export default function FutureTransactions() {
         </DialogContent>
       </Dialog>
 
-      {/* Payment date dialog */}
       <Dialog open={!!payingItem} onOpenChange={open => !open && setPayingItem(null)}>
         <DialogContent className="bg-card border-border">
           <DialogHeader><DialogTitle>Registrar Pagamento</DialogTitle></DialogHeader>
           {payingItem && <PaymentDateDialog item={payingItem} onClose={() => setPayingItem(null)} />}
         </DialogContent>
       </Dialog>
+
+      <ReceiptPreviewDialog url={previewReceipt} onClose={() => setPreviewReceipt(null)} />
     </div>
   );
 }

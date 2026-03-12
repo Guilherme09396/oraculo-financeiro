@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card';
 import MonthSelector from '@/components/MonthSelector';
 import {
   TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight,
-  PiggyBank, Activity, AlertTriangle, Clock, Target, DollarSign,
+  PiggyBank, Activity, AlertTriangle, Clock, Target, DollarSign, CreditCard,
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -26,15 +26,15 @@ function StatCard({ label, value, icon: Icon, trend, color }: {
   label: string; value: string; icon: any; trend?: string; color: string;
 }) {
   return (
-    <Card className="p-5 bg-card border-border hover:border-primary/30 transition-colors animate-fade-in">
+    <Card className="p-4 sm:p-5 bg-card border-border hover:border-primary/30 transition-colors animate-fade-in">
       <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
+        <div className="min-w-0">
+          <p className="text-xs sm:text-sm text-muted-foreground truncate">{label}</p>
+          <p className={`text-lg sm:text-2xl font-bold mt-1 ${color}`}>{value}</p>
           {trend && <p className="text-xs text-muted-foreground mt-1">{trend}</p>}
         </div>
-        <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
-          <Icon className="w-5 h-5 text-muted-foreground" />
+        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+          <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground" />
         </div>
       </div>
     </Card>
@@ -46,20 +46,20 @@ function HealthScore({ score }: { score: number }) {
   const getLabel = (s: number) => s >= 80 ? 'Excelente' : s >= 60 ? 'Boa' : s >= 40 ? 'Regular' : 'Atenção';
 
   return (
-    <Card className="p-6 bg-card border-border animate-fade-in">
+    <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
       <h3 className="text-sm font-medium text-muted-foreground mb-4">Saúde Financeira</h3>
-      <div className="flex items-center gap-6">
-        <div className="relative w-24 h-24">
-          <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+      <div className="flex items-center gap-4 sm:gap-6">
+        <div className="relative w-20 h-20 sm:w-24 sm:h-24 shrink-0">
+          <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
             <circle cx="50" cy="50" r="42" fill="none" stroke="hsl(var(--secondary))" strokeWidth="8" />
             <circle cx="50" cy="50" r="42" fill="none" stroke="currentColor" strokeWidth="8"
               strokeDasharray={`${score * 2.64} 264`} strokeLinecap="round" className={getColor(score)} />
           </svg>
-          <span className={`absolute inset-0 flex items-center justify-center text-2xl font-bold ${getColor(score)}`}>{score}</span>
+          <span className={`absolute inset-0 flex items-center justify-center text-xl sm:text-2xl font-bold ${getColor(score)}`}>{score}</span>
         </div>
         <div>
-          <p className={`text-lg font-semibold ${getColor(score)}`}>{getLabel(score)}</p>
-          <p className="text-sm text-muted-foreground mt-1">Baseado nos seus hábitos financeiros do mês</p>
+          <p className={`text-base sm:text-lg font-semibold ${getColor(score)}`}>{getLabel(score)}</p>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1">Baseado nos seus hábitos financeiros do mês</p>
         </div>
       </div>
     </Card>
@@ -102,10 +102,19 @@ export default function Dashboard() {
     enabled: !!user,
   });
 
+  const { data: cards = [] } = useQuery({
+    queryKey: ['credit_cards'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('credit_cards').select('*');
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
   const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
-  // Cumulative all-time balance
   const cumulativeBalance = useMemo(() => {
     const allIncome = transactions.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + Number(t.amount), 0);
     const allExpense = transactions.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + Number(t.amount), 0);
@@ -132,8 +141,8 @@ export default function Dashboard() {
     const savings = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome * 100) : 0;
 
     const pendingFuture = futureItems.filter((f: any) => f.status === 'pending');
-    const toReceive = pendingFuture.filter((f: any) => f.type === 'income').reduce((s: number, f: any) => s + Number(f.amount), 0);
-    const toPay = pendingFuture.filter((f: any) => f.type === 'expense').reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const toReceive = pendingFuture.filter((f: any) => f.type === 'income' && f.due_date >= startOfMonth && f.due_date <= endOfMonth).reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const toPay = pendingFuture.filter((f: any) => f.type === 'expense' && f.due_date >= startOfMonth && f.due_date <= endOfMonth).reduce((s: number, f: any) => s + Number(f.amount), 0);
 
     const goalsProgress = goals.length > 0
       ? goals.reduce((s: number, g: any) => s + Math.min(1, Number(g.current_amount) / Number(g.target_amount)), 0) / goals.length * 20
@@ -189,6 +198,18 @@ export default function Dashboard() {
     const upcoming = futureItems.filter((f: any) => f.status === 'pending' && f.due_date >= today && f.due_date <= nextWeek.toISOString().split('T')[0]);
     if (upcoming.length > 0) list.push({ text: `📅 ${upcoming.length} conta(s) vencem nos próximos 7 dias.`, type: 'warning' });
 
+    // Card due date alerts
+    if (cards.length > 0) {
+      const todayDate = new Date();
+      cards.forEach((card: any) => {
+        const dueDay = card.due_day;
+        const diff = dueDay - todayDate.getDate();
+        if (diff >= 0 && diff <= 5) {
+          list.push({ text: `💳 Cartão ${card.name} vence em ${diff === 0 ? 'HOJE' : `${diff} dia(s)`}!`, type: diff <= 2 ? 'danger' : 'warning' });
+        }
+      });
+    }
+
     if (stats.expenses > stats.income && stats.income > 0) list.push({ text: '🚨 Seus gastos estão maiores que sua renda este mês!', type: 'danger' });
     if (stats.savings < 10 && stats.income > 0) list.push({ text: '💡 Você está economizando menos de 10% da renda.', type: 'warning' });
     if (expenseByCategory.length > 0) {
@@ -201,7 +222,7 @@ export default function Dashboard() {
       if (achieved > 0) list.push({ text: `🎯 Parabéns! Você atingiu ${achieved} meta(s) financeira(s)!`, type: 'info' });
     }
     return list;
-  }, [stats, expenseByCategory, futureItems, goals]);
+  }, [stats, expenseByCategory, futureItems, goals, cards]);
 
   const tooltipStyle = {
     contentStyle: { background: 'hsl(220, 18%, 10%)', border: '1px solid hsl(220, 14%, 16%)', borderRadius: '8px', color: 'hsl(210, 20%, 95%)' },
@@ -213,14 +234,13 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">{getGreeting()}, {displayName}! 👋</h1>
-          <p className="text-muted-foreground">Sua visão financeira completa</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">{getGreeting()}, {displayName}! 👋</h1>
+          <p className="text-sm text-muted-foreground">Sua visão financeira completa</p>
         </div>
         <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
       </div>
 
-      {/* Stat Cards - 7 cards with cumulative balance */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard label="Receitas (mês)" value={formatCurrency(stats.income)} icon={TrendingUp} color="text-income" />
         <StatCard label="Despesas (mês)" value={formatCurrency(stats.expenses)} icon={TrendingDown} color="text-expense" />
         <StatCard label="Saldo do Mês" value={formatCurrency(stats.balance)} icon={Wallet} color={stats.balance >= 0 ? 'text-income' : 'text-expense'} />
@@ -232,7 +252,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <HealthScore score={stats.score} />
-        <Card className="p-6 bg-card border-border lg:col-span-2 animate-fade-in">
+        <Card className="p-5 sm:p-6 bg-card border-border lg:col-span-2 animate-fade-in">
           <h3 className="text-sm font-medium text-muted-foreground mb-4 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" /> Alertas & Insights
           </h3>
@@ -241,7 +261,7 @@ export default function Dashboard() {
           ) : (
             <ul className="space-y-2">
               {alerts.map((a, i) => (
-                <li key={i} className={`text-sm rounded-lg px-4 py-3 ${
+                <li key={i} className={`text-sm rounded-lg px-3 sm:px-4 py-2 sm:py-3 ${
                   a.type === 'danger' ? 'bg-expense/10 text-expense' :
                   a.type === 'warning' ? 'bg-warning/10 text-warning' :
                   'bg-secondary text-foreground'
@@ -252,9 +272,8 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="p-6 bg-card border-border animate-fade-in">
+        <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
           <h3 className="text-sm font-medium text-muted-foreground mb-4">Receitas vs Despesas (Diário)</h3>
           {dailyData.length > 0 ? (
             <ResponsiveContainer width="100%" height={250}>
@@ -272,25 +291,25 @@ export default function Dashboard() {
           )}
         </Card>
 
-        <Card className="p-6 bg-card border-border animate-fade-in">
+        <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
           <h3 className="text-sm font-medium text-muted-foreground mb-4">Despesas por Categoria</h3>
           {expenseByCategory.length > 0 ? (
-            <div className="flex items-center gap-6">
-              <ResponsiveContainer width="50%" height={200}>
+            <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+              <ResponsiveContainer width="100%" height={200} className="sm:w-1/2">
                 <PieChart>
                   <Pie data={expenseByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
                     {expenseByCategory.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
-              <div className="space-y-2 flex-1">
+              <div className="space-y-2 flex-1 w-full">
                 {expenseByCategory.slice(0, 6).map((cat, i) => (
                   <div key={cat.name} className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
                       <span className="text-foreground truncate">{cat.name}</span>
                     </div>
-                    <span className="text-muted-foreground font-mono text-xs">{formatCurrency(cat.value)}</span>
+                    <span className="text-muted-foreground font-mono text-xs shrink-0">{formatCurrency(cat.value)}</span>
                   </div>
                 ))}
               </div>
@@ -301,23 +320,22 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Recent Transactions + Goals */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="p-6 bg-card border-border animate-fade-in">
+        <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
           <h3 className="text-sm font-medium text-muted-foreground mb-4">Transações Recentes</h3>
           <div className="space-y-3">
             {transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth).slice(0, 8).map((t: any) => (
-              <div key={t.id} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${t.type === 'income' ? 'bg-income/15' : 'bg-expense/15'}`}>
+              <div key={t.id} className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${t.type === 'income' ? 'bg-income/15' : 'bg-expense/15'}`}>
                     {t.type === 'income' ? <TrendingUp className="w-4 h-4 text-income" /> : <TrendingDown className="w-4 h-4 text-expense" />}
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{t.description}</p>
-                    <p className="text-xs text-muted-foreground">{(t as any).categories?.name || 'Sem categoria'}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{t.description}</p>
+                    <p className="text-xs text-muted-foreground truncate">{(t as any).categories?.name || 'Sem categoria'}</p>
                   </div>
                 </div>
-                <span className={`font-mono text-sm font-semibold ${t.type === 'income' ? 'text-income' : 'text-expense'}`}>
+                <span className={`font-mono text-sm font-semibold shrink-0 ${t.type === 'income' ? 'text-income' : 'text-expense'}`}>
                   {t.type === 'income' ? '+' : '-'}{formatCurrency(Number(t.amount))}
                 </span>
               </div>
@@ -328,7 +346,7 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        <Card className="p-6 bg-card border-border animate-fade-in">
+        <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
           <h3 className="text-sm font-medium text-muted-foreground mb-4 flex items-center gap-2">
             <Target className="w-4 h-4" /> Progresso das Metas
           </h3>
@@ -338,7 +356,7 @@ export default function Dashboard() {
               return (
                 <div key={g.id}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-foreground">{g.icon} {g.title}</span>
+                    <span className="text-sm text-foreground truncate">{g.icon} {g.title}</span>
                     <span className="text-xs text-muted-foreground font-mono">{pct.toFixed(0)}%</span>
                   </div>
                   <div className="h-2 bg-secondary rounded-full overflow-hidden">
