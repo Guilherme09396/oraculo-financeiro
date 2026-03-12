@@ -11,13 +11,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import MonthSelector from '@/components/MonthSelector';
+import ReceiptPreviewDialog from '@/components/ReceiptPreviewDialog';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
-import { Plus, Search, Trash2, TrendingUp, TrendingDown, Pencil, Paperclip, ExternalLink } from 'lucide-react';
+import { Plus, Search, Trash2, TrendingUp, TrendingDown, Pencil, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
 function TransactionDialog({ transaction, onClose, defaultType }: { transaction?: any; onClose: () => void; defaultType?: string }) {
@@ -62,7 +63,7 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
     const data: any = {
       description, amount: parseFloat(amount), type, category_id: categoryId || null,
       date, payment_method: paymentMethod || null, notes: notes || null, receipt_url: receiptUrl || null,
-      card_id: cardId || null,
+      card_id: (paymentMethod === 'credit_card' && cardId) ? cardId : null,
     };
     if (isEditing) {
       update.mutate({ id: transaction.id, ...data }, { onSuccess: onClose });
@@ -108,33 +109,30 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
           </Select>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-2">
+        <Label>Forma de Pagamento</Label>
+        <Select value={paymentMethod} onValueChange={(v) => { setPaymentMethod(v); if (v !== 'credit_card') setCardId(''); }}>
+          <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pix">PIX</SelectItem>
+            <SelectItem value="credit_card">Cartão de Crédito</SelectItem>
+            <SelectItem value="debit_card">Cartão de Débito</SelectItem>
+            <SelectItem value="cash">Dinheiro</SelectItem>
+            <SelectItem value="transfer">Transferência</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {paymentMethod === 'credit_card' && cards && cards.length > 0 && (
         <div className="space-y-2">
-          <Label>Forma de Pagamento</Label>
-          <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-            <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione" /></SelectTrigger>
+          <Label>Qual cartão?</Label>
+          <Select value={cardId} onValueChange={setCardId}>
+            <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione o cartão" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="pix">PIX</SelectItem>
-              <SelectItem value="credit_card">Cartão de Crédito</SelectItem>
-              <SelectItem value="debit_card">Cartão de Débito</SelectItem>
-              <SelectItem value="cash">Dinheiro</SelectItem>
-              <SelectItem value="transfer">Transferência</SelectItem>
+              {cards.map((c: any) => <SelectItem key={c.id} value={c.id}>💳 {c.name}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
-        {type === 'expense' && cards.length > 0 && (
-          <div className="space-y-2">
-            <Label>Cartão</Label>
-            <Select value={cardId} onValueChange={setCardId}>
-              <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Nenhum" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Nenhum</SelectItem>
-                {cards.map((c: any) => <SelectItem key={c.id} value={c.id}>💳 {c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-      </div>
+      )}
       <div className="space-y-2">
         <Label>Observações</Label>
         <Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notas opcionais..." className="bg-secondary border-border" rows={2} />
@@ -143,9 +141,7 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
         <Label>Comprovante</Label>
         {receiptUrl ? (
           <div className="flex items-center gap-2">
-            <a href={receiptUrl} target="_blank" rel="noopener" className="text-primary text-sm underline flex items-center gap-1">
-              <ExternalLink className="w-3 h-3" /> Ver comprovante
-            </a>
+            <span className="text-primary text-sm">✅ Comprovante anexado</span>
             <Button type="button" variant="ghost" size="sm" onClick={() => setReceiptUrl('')} className="text-xs">Remover</Button>
           </div>
         ) : (
@@ -171,6 +167,7 @@ export default function Transactions() {
   const [filterCategory, setFilterCategory] = useState('all');
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
 
   const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
@@ -196,14 +193,14 @@ export default function Transactions() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Transações</h1>
-          <p className="text-muted-foreground">Gerencie suas movimentações financeiras</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Transações</h1>
+          <p className="text-sm text-muted-foreground">Gerencie suas movimentações financeiras</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
           <Dialog open={showCreate} onOpenChange={setShowCreate}>
             <DialogTrigger asChild>
-              <Button className="gradient-primary gap-2"><Plus className="w-4 h-4" /> Nova Transação</Button>
+              <Button className="gradient-primary gap-2"><Plus className="w-4 h-4" /> <span className="hidden sm:inline">Nova Transação</span></Button>
             </DialogTrigger>
             <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Nova Transação</DialogTitle></DialogHeader>
@@ -213,30 +210,28 @@ export default function Transactions() {
         </div>
       </div>
 
-      {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="p-4 bg-card border-border">
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
+        <Card className="p-3 sm:p-4 bg-card border-border">
           <p className="text-xs text-muted-foreground">Receitas</p>
-          <p className="text-lg font-bold text-income">{formatCurrency(totalIncome)}</p>
+          <p className="text-base sm:text-lg font-bold text-income">{formatCurrency(totalIncome)}</p>
         </Card>
-        <Card className="p-4 bg-card border-border">
+        <Card className="p-3 sm:p-4 bg-card border-border">
           <p className="text-xs text-muted-foreground">Despesas</p>
-          <p className="text-lg font-bold text-expense">{formatCurrency(totalExpense)}</p>
+          <p className="text-base sm:text-lg font-bold text-expense">{formatCurrency(totalExpense)}</p>
         </Card>
-        <Card className="p-4 bg-card border-border">
+        <Card className="p-3 sm:p-4 bg-card border-border">
           <p className="text-xs text-muted-foreground">Saldo</p>
-          <p className={`text-lg font-bold ${totalIncome - totalExpense >= 0 ? 'text-income' : 'text-expense'}`}>{formatCurrency(totalIncome - totalExpense)}</p>
+          <p className={`text-base sm:text-lg font-bold ${totalIncome - totalExpense >= 0 ? 'text-income' : 'text-expense'}`}>{formatCurrency(totalIncome - totalExpense)}</p>
         </Card>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+      <div className="flex gap-2 sm:gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[160px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Buscar transação..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10 bg-secondary border-border" />
+          <Input placeholder="Buscar..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10 bg-secondary border-border" />
         </div>
         <Select value={filterType} onValueChange={setFilterType}>
-          <SelectTrigger className="w-[140px] bg-secondary border-border"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-[120px] sm:w-[140px] bg-secondary border-border"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas</SelectItem>
             <SelectItem value="income">Receitas</SelectItem>
@@ -244,7 +239,7 @@ export default function Transactions() {
           </SelectContent>
         </Select>
         <Select value={filterCategory} onValueChange={setFilterCategory}>
-          <SelectTrigger className="w-[180px] bg-secondary border-border"><SelectValue placeholder="Categoria" /></SelectTrigger>
+          <SelectTrigger className="w-[140px] sm:w-[180px] bg-secondary border-border"><SelectValue placeholder="Categoria" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas categorias</SelectItem>
             {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>)}
@@ -252,40 +247,43 @@ export default function Transactions() {
         </Select>
       </div>
 
-      {/* List */}
       <Card className="bg-card border-border overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-muted-foreground">Carregando...</div>
         ) : filtered.length === 0 ? (
-          <div className="p-12 text-center text-muted-foreground">
+          <div className="p-8 sm:p-12 text-center text-muted-foreground">
             <p className="text-lg">Nenhuma transação encontrada</p>
             <p className="text-sm mt-1">Ajuste os filtros ou adicione uma nova transação</p>
           </div>
         ) : (
           <div className="divide-y divide-border">
             {filtered.map((t: any) => (
-              <div key={t.id} className="flex items-center justify-between px-5 py-4 hover:bg-secondary/50 transition-colors">
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${t.type === 'income' ? 'bg-income/15' : 'bg-expense/15'}`}>
-                    {t.type === 'income' ? <TrendingUp className="w-5 h-5 text-income" /> : <TrendingDown className="w-5 h-5 text-expense" />}
+              <div key={t.id} className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 hover:bg-secondary/50 transition-colors gap-2">
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                  <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 ${t.type === 'income' ? 'bg-income/15' : 'bg-expense/15'}`}>
+                    {t.type === 'income' ? <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-income" /> : <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5 text-expense" />}
                   </div>
-                  <div>
-                    <p className="font-medium text-foreground">{t.description}</p>
-                    <p className="text-xs text-muted-foreground">
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground text-sm sm:text-base truncate">{t.description}</p>
+                    <p className="text-xs text-muted-foreground truncate">
                       {formatDate(t.date)} · {(t as any).categories?.name || 'Sem categoria'}
                       {t.payment_method && ` · ${t.payment_method}`}
-                      {(t as any).receipt_url && ' 📎'}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`font-mono font-semibold ${t.type === 'income' ? 'text-income' : 'text-expense'}`}>
+                <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                  <span className={`font-mono font-semibold text-sm ${t.type === 'income' ? 'text-income' : 'text-expense'}`}>
                     {t.type === 'income' ? '+' : '-'}{formatCurrency(Number(t.amount))}
                   </span>
+                  {(t as any).receipt_url && (
+                    <Button variant="ghost" size="icon" onClick={() => setPreviewReceipt((t as any).receipt_url)} className="h-8 w-8" title="Ver comprovante">
+                      <FileText className="w-3.5 h-3.5 text-primary" />
+                    </Button>
+                  )}
                   <Button variant="ghost" size="icon" onClick={() => setEditing(t)} className="text-muted-foreground hover:text-foreground h-8 w-8">
                     <Pencil className="w-3.5 h-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => deleteTransaction.mutate(t.id)} className="text-muted-foreground hover:text-destructive h-8 w-8">
+                  <Button variant="ghost" size="icon" onClick={() => deleteTransaction.mutate(t.id)} className="text-muted-foreground hover:text-destructive h-8 w-8 hidden sm:flex">
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
@@ -295,13 +293,14 @@ export default function Transactions() {
         )}
       </Card>
 
-      {/* Edit Dialog */}
       <Dialog open={!!editing} onOpenChange={open => !open && setEditing(null)}>
         <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Editar Transação</DialogTitle></DialogHeader>
           {editing && <TransactionDialog transaction={editing} onClose={() => setEditing(null)} />}
         </DialogContent>
       </Dialog>
+
+      <ReceiptPreviewDialog url={previewReceipt} onClose={() => setPreviewReceipt(null)} />
     </div>
   );
 }
