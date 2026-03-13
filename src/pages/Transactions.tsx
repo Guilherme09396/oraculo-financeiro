@@ -28,7 +28,7 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
   const [amount, setAmount] = useState(transaction ? String(transaction.amount) : '');
   const [type, setType] = useState(transaction?.type || defaultType || 'expense');
   const [categoryId, setCategoryId] = useState(transaction?.category_id || '');
-  const [date, setDate] = useState(transaction?.date || new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(transaction?.date || new Date().toLocaleDateString('en-CA'));
   const [paymentMethod, setPaymentMethod] = useState(transaction?.payment_method || '');
   const [notes, setNotes] = useState(transaction?.notes || '');
   const [receiptUrl, setReceiptUrl] = useState((transaction as any)?.receipt_url || '');
@@ -267,7 +267,8 @@ export default function Transactions() {
                     <p className="font-medium text-foreground text-sm sm:text-base truncate">{t.description}</p>
                     <p className="text-xs text-muted-foreground truncate">
                       {formatDate(t.date)} · {(t as any).categories?.name || 'Sem categoria'}
-                      {t.payment_method && ` · ${t.payment_method}`}
+                      {t.payment_method === 'credit_card' && ' · 💳 Cartão'}
+                      {t.payment_method && t.payment_method !== 'credit_card' && ` · ${t.payment_method}`}
                     </p>
                   </div>
                 </div>

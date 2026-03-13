@@ -6,9 +6,12 @@ export function formatCurrency(value: number): string {
 }
 
 export function formatDate(date: string): string {
-  return new Intl.DateTimeFormat('pt-BR').format(new Date(date));
+  // Append T12:00:00 to avoid timezone offset shifting the date by one day
+  const d = date.includes('T') ? date : date + 'T12:00:00';
+  return new Intl.DateTimeFormat('pt-BR').format(new Date(d));
 }
 
 export function formatShortDate(date: string): string {
-  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(new Date(date));
+  const d = date.includes('T') ? date : date + 'T12:00:00';
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(new Date(d));
 }

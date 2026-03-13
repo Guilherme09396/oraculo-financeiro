@@ -115,9 +115,10 @@ export default function Dashboard() {
   const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
+  // Cumulative balance: all-time income - expenses (excluding credit card expenses, which are paid via invoice)
   const cumulativeBalance = useMemo(() => {
     const allIncome = transactions.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + Number(t.amount), 0);
-    const allExpense = transactions.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const allExpense = transactions.filter((t: any) => t.type === 'expense' && t.payment_method !== 'credit_card').reduce((s: number, t: any) => s + Number(t.amount), 0);
     const paidFutureIncome = futureItems.filter((f: any) => f.status === 'paid' && f.type === 'income').reduce((s: number, f: any) => s + Number(f.amount), 0);
     const paidFutureExpense = futureItems.filter((f: any) => f.status === 'paid' && f.type === 'expense').reduce((s: number, f: any) => s + Number(f.amount), 0);
     return (allIncome + paidFutureIncome) - (allExpense + paidFutureExpense);
@@ -125,8 +126,9 @@ export default function Dashboard() {
 
   const stats = useMemo(() => {
     const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth);
+    // Exclude credit card transactions from income/expense totals (they only count in category stats)
     const income = monthly.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + Number(t.amount), 0);
-    const expenses = monthly.filter((t: any) => t.type === 'expense').reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const expenses = monthly.filter((t: any) => t.type === 'expense' && t.payment_method !== 'credit_card').reduce((s: number, t: any) => s + Number(t.amount), 0);
 
     const paidFuture = futureItems.filter((f: any) => {
       const paidAt = (f as any).paid_at;
@@ -144,6 +146,9 @@ export default function Dashboard() {
     const toReceive = pendingFuture.filter((f: any) => f.type === 'income' && f.due_date >= startOfMonth && f.due_date <= endOfMonth).reduce((s: number, f: any) => s + Number(f.amount), 0);
     const toPay = pendingFuture.filter((f: any) => f.type === 'expense' && f.due_date >= startOfMonth && f.due_date <= endOfMonth).reduce((s: number, f: any) => s + Number(f.amount), 0);
 
+    // Credit card spending this month (for category stats only)
+    const cardSpending = monthly.filter((t: any) => t.type === 'expense' && t.payment_method === 'credit_card').reduce((s: number, t: any) => s + Number(t.amount), 0);
+
     const goalsProgress = goals.length > 0
       ? goals.reduce((s: number, g: any) => s + Math.min(1, Number(g.current_amount) / Number(g.target_amount)), 0) / goals.length * 20
       : 10;
@@ -153,9 +158,10 @@ export default function Dashboard() {
     const overdueScore = Math.max(0, 20 - overdueCount * 5);
     const score = Math.round(Math.min(100, savingsScore + expenseRatio + goalsProgress + overdueScore));
 
-    return { income: totalIncome, expenses: totalExpenses, balance, savings, score, toReceive, toPay, transactionCount: monthly.length };
+    return { income: totalIncome, expenses: totalExpenses, balance, savings, score, toReceive, toPay, transactionCount: monthly.length, cardSpending };
   }, [transactions, futureItems, goals, startOfMonth, endOfMonth]);
 
+  // Category stats include credit card expenses (for spending analysis)
   const expenseByCategory = useMemo(() => {
     const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth && t.type === 'expense');
     const map = new Map<string, number>();
@@ -180,7 +186,7 @@ export default function Dashboard() {
       const day = t.date.slice(8, 10);
       const prev = map.get(day) || { income: 0, expense: 0 };
       if (t.type === 'income') prev.income += Number(t.amount);
-      else prev.expense += Number(t.amount);
+      else if (t.payment_method !== 'credit_card') prev.expense += Number(t.amount);
       map.set(day, prev);
     });
     return Array.from(map.entries()).map(([day, v]) => ({ day, ...v })).sort((a, b) => a.day.localeCompare(b.day));
@@ -198,7 +204,6 @@ export default function Dashboard() {
     const upcoming = futureItems.filter((f: any) => f.status === 'pending' && f.due_date >= today && f.due_date <= nextWeek.toISOString().split('T')[0]);
     if (upcoming.length > 0) list.push({ text: `📅 ${upcoming.length} conta(s) vencem nos próximos 7 dias.`, type: 'warning' });
 
-    // Card due date alerts
     if (cards.length > 0) {
       const todayDate = new Date();
       cards.forEach((card: any) => {
@@ -210,11 +215,16 @@ export default function Dashboard() {
       });
     }
 
+    if (stats.cardSpending > 0) {
+      list.push({ text: `💳 Gastos no cartão este mês: ${formatCurrency(stats.cardSpending)} (não impactam saldo até o pagamento da fatura)`, type: 'info' });
+    }
+
     if (stats.expenses > stats.income && stats.income > 0) list.push({ text: '🚨 Seus gastos estão maiores que sua renda este mês!', type: 'danger' });
     if (stats.savings < 10 && stats.income > 0) list.push({ text: '💡 Você está economizando menos de 10% da renda.', type: 'warning' });
     if (expenseByCategory.length > 0) {
+      const totalCatExpense = expenseByCategory.reduce((s, c) => s + c.value, 0);
       const top = expenseByCategory[0];
-      const pct = stats.expenses > 0 ? (top.value / stats.expenses * 100).toFixed(0) : 0;
+      const pct = totalCatExpense > 0 ? (top.value / totalCatExpense * 100).toFixed(0) : 0;
       list.push({ text: `📊 Maior gasto: ${top.name} — ${formatCurrency(top.value)} (${pct}% do total)`, type: 'info' });
     }
     if (goals.length > 0) {
@@ -248,6 +258,9 @@ export default function Dashboard() {
         <StatCard label="A Receber" value={formatCurrency(stats.toReceive)} icon={ArrowUpRight} color="text-income" />
         <StatCard label="A Pagar" value={formatCurrency(stats.toPay)} icon={ArrowDownRight} color="text-expense" />
         <StatCard label="Economia" value={`${stats.savings.toFixed(0)}%`} icon={PiggyBank} color="text-foreground" trend={stats.savings > 20 ? '✨ Ótimo!' : 'Pode melhorar'} />
+        {stats.cardSpending > 0 && (
+          <StatCard label="Cartão (mês)" value={formatCurrency(stats.cardSpending)} icon={CreditCard} color="text-muted-foreground" trend="Não impacta saldo" />
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -293,6 +306,7 @@ export default function Dashboard() {
 
         <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
           <h3 className="text-sm font-medium text-muted-foreground mb-4">Despesas por Categoria</h3>
+          <p className="text-xs text-muted-foreground mb-3">Inclui gastos no cartão de crédito</p>
           {expenseByCategory.length > 0 ? (
             <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
               <ResponsiveContainer width="100%" height={200} className="sm:w-1/2">
@@ -332,7 +346,10 @@ export default function Dashboard() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{t.description}</p>
-                    <p className="text-xs text-muted-foreground truncate">{(t as any).categories?.name || 'Sem categoria'}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {(t as any).categories?.name || 'Sem categoria'}
+                      {t.payment_method === 'credit_card' && ' · 💳 Cartão'}
+                    </p>
                   </div>
                 </div>
                 <span className={`font-mono text-sm font-semibold shrink-0 ${t.type === 'income' ? 'text-income' : 'text-expense'}`}>

@@ -34,7 +34,34 @@ function useFutureTransactions() {
   });
 }
 
-function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () => void; cascadeEdit?: boolean }) {
+// Cascade scope: 'single' | 'all' | 'this_and_future'
+type CascadeScope = 'single' | 'all' | 'this_and_future';
+
+function CascadeChoiceDialog({ item, onChoice, onClose }: { item: any; onChoice: (scope: CascadeScope) => void; onClose: () => void }) {
+  const isInstallment = item.is_installment;
+  const label = isInstallment ? 'parcela' : 'recorrência';
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        <strong className="text-foreground">{item.description}</strong> faz parte de uma {label}. Como deseja aplicar a alteração?
+      </p>
+      <div className="space-y-2">
+        <Button variant="outline" className="w-full justify-start" onClick={() => onChoice('single')}>
+          Somente este lançamento
+        </Button>
+        <Button variant="outline" className="w-full justify-start" onClick={() => onChoice('this_and_future')}>
+          Este e todos os futuros
+        </Button>
+        <Button variant="outline" className="w-full justify-start" onClick={() => onChoice('all')}>
+          Todos os lançamentos do grupo
+        </Button>
+      </div>
+      <Button variant="ghost" className="w-full" onClick={onClose}>Cancelar</Button>
+    </div>
+  );
+}
+
+function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: () => void; cascadeScope?: CascadeScope }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const { data: categories = [] } = useCategories();
@@ -43,7 +70,7 @@ function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () 
   const [amount, setAmount] = useState(item ? String(item.amount) : '');
   const [type, setType] = useState(item?.type || 'expense');
   const [categoryId, setCategoryId] = useState(item?.category_id || '');
-  const [dueDate, setDueDate] = useState(item?.due_date || new Date().toISOString().split('T')[0]);
+  const [dueDate, setDueDate] = useState(item?.due_date || new Date().toLocaleDateString('en-CA'));
   const [isRecurring, setIsRecurring] = useState(item?.is_recurring || false);
   const [recurringPeriod, setRecurringPeriod] = useState(item?.recurring_period || 'monthly');
   const [isInstallment, setIsInstallment] = useState(false);
@@ -70,14 +97,23 @@ function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () 
           receipt_url: receiptUrl || null,
         };
 
-        if (item.is_installment && item.installment_group && cascadeEdit) {
+        if (cascadeScope === 'all' && item.installment_group) {
+          // Update all items in the group
           const { error } = await supabase.from('future_transactions')
             .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null })
             .eq('installment_group', item.installment_group);
           if (error) throw error;
+        } else if (cascadeScope === 'this_and_future' && item.installment_group) {
+          // Update this and future items
+          const { error } = await supabase.from('future_transactions')
+            .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null })
+            .eq('installment_group', item.installment_group)
+            .gte('due_date', item.due_date);
+          if (error) throw error;
         } else {
-          updateData.due_date = dueDate + 'T12:00:00';
-          const { error } = await supabase.from('future_transactions').update({ ...updateData, due_date: dueDate }).eq('id', item.id);
+          // Single update
+          updateData.due_date = dueDate;
+          const { error } = await supabase.from('future_transactions').update(updateData).eq('id', item.id);
           if (error) throw error;
         }
       } else if (isInstallment && totalInstallments) {
@@ -97,24 +133,21 @@ function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () 
         const { error } = await supabase.from('future_transactions').insert(rows);
         if (error) throw error;
       } else if (isRecurring && recurringPeriod === 'monthly') {
-        // Create entries for the remaining months of the current year + full next year
         const startD = new Date(dueDate + 'T12:00:00');
         const endYear = startD.getFullYear() + 1;
         const rows: any[] = [];
         const d = new Date(startD);
+        const recurringGroup = crypto.randomUUID();
         while (d.getFullYear() <= endYear) {
           rows.push({
             user_id: user!.id, description: desc, amount: parseFloat(amount), type,
             category_id: categoryId || null,
             due_date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
             is_recurring: true, recurring_period: 'monthly', status: 'pending',
-            installment_group: crypto.randomUUID(), // use a shared group for recurring
+            installment_group: recurringGroup,
           });
           d.setMonth(d.getMonth() + 1);
         }
-        // Set a shared recurring group
-        const recurringGroup = crypto.randomUUID();
-        rows.forEach(r => r.installment_group = recurringGroup);
         const { error } = await supabase.from('future_transactions').insert(rows);
         if (error) throw error;
       } else {
@@ -153,10 +186,10 @@ function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () 
           </Select>
         </div>
       </div>
-      {isEditing && item?.is_installment && item?.installment_group && (
+      {isEditing && (item?.is_installment || item?.is_recurring) && cascadeScope && (
         <div className="bg-secondary/50 rounded-lg p-3 text-sm text-muted-foreground">
-          ℹ️ Parcela ({item.current_installment}/{item.total_installments}).
-          {cascadeEdit ? ' As alterações serão aplicadas em todas as parcelas.' : ''}
+          ℹ️ {item.is_installment ? `Parcela (${item.current_installment}/${item.total_installments}).` : 'Conta recorrente.'}
+          {' '}Escopo: {cascadeScope === 'single' ? 'somente este' : cascadeScope === 'all' ? 'todos do grupo' : 'este e futuros'}.
         </div>
       )}
       {!isEditing && (
@@ -194,7 +227,7 @@ function FutureDialog({ item, onClose, cascadeEdit }: { item?: any; onClose: () 
 
 function PaymentDateDialog({ item, onClose }: { item: any; onClose: () => void }) {
   const qc = useQueryClient();
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toLocaleDateString('en-CA');
   const [paidDate, setPaidDate] = useState(today);
 
   const mut = useMutation({
@@ -236,7 +269,8 @@ export default function FutureTransactions() {
   const { data: items = [], isLoading } = useFutureTransactions();
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [cascadeEdit, setCascadeEdit] = useState(false);
+  const [cascadeScope, setCascadeScope] = useState<CascadeScope>('single');
+  const [choosingCascade, setChoosingCascade] = useState<{ item: any; action: 'edit' | 'delete' } | null>(null);
   const [payingItem, setPayingItem] = useState<any>(null);
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
 
@@ -257,17 +291,15 @@ export default function FutureTransactions() {
   });
 
   const deleteMut = useMutation({
-    mutationFn: async ({ id, installmentGroup, isRecurring, dueDate: itemDueDate }: { id: string; installmentGroup?: string; isRecurring?: boolean; dueDate?: string }) => {
-      if (isRecurring && installmentGroup && itemDueDate) {
-        // Delete this item and all future items in the group (keep past ones)
+    mutationFn: async ({ id, installmentGroup, scope, dueDate: itemDueDate }: { id: string; installmentGroup?: string; scope: CascadeScope; dueDate?: string }) => {
+      if (scope === 'all' && installmentGroup) {
+        const { error } = await supabase.from('future_transactions').delete().eq('installment_group', installmentGroup);
+        if (error) throw error;
+      } else if (scope === 'this_and_future' && installmentGroup && itemDueDate) {
         const { error } = await supabase.from('future_transactions')
           .delete()
           .eq('installment_group', installmentGroup)
           .gte('due_date', itemDueDate);
-        if (error) throw error;
-      } else if (installmentGroup && !isRecurring) {
-        // Delete all installments in the group
-        const { error } = await supabase.from('future_transactions').delete().eq('installment_group', installmentGroup);
         if (error) throw error;
       } else {
         const { error } = await supabase.from('future_transactions').delete().eq('id', id);
@@ -281,21 +313,31 @@ export default function FutureTransactions() {
   const toPay = pending.filter((i: any) => i.type === 'expense').reduce((s: number, i: any) => s + Number(i.amount), 0);
 
   const handleEdit = (item: any) => {
-    setCascadeEdit(!!(item.is_installment && item.installment_group));
-    setEditing(item);
+    if ((item.is_installment || item.is_recurring) && item.installment_group) {
+      setChoosingCascade({ item, action: 'edit' });
+    } else {
+      setCascadeScope('single');
+      setEditing(item);
+    }
   };
 
   const handleDelete = (item: any) => {
-    if (item.is_recurring && item.installment_group) {
-      if (confirm(`Deseja excluir "${item.description}" deste mês em diante? (os anteriores serão mantidos)`)) {
-        deleteMut.mutate({ id: item.id, installmentGroup: item.installment_group, isRecurring: true, dueDate: item.due_date });
-      }
-    } else if (item.is_installment && item.installment_group) {
-      if (confirm(`Deseja excluir todas as ${item.total_installments} parcelas de "${item.description}"?`)) {
-        deleteMut.mutate({ id: item.id, installmentGroup: item.installment_group });
-      }
+    if ((item.is_installment || item.is_recurring) && item.installment_group) {
+      setChoosingCascade({ item, action: 'delete' });
     } else {
-      deleteMut.mutate({ id: item.id });
+      deleteMut.mutate({ id: item.id, scope: 'single' });
+    }
+  };
+
+  const handleCascadeChoice = (scope: CascadeScope) => {
+    if (!choosingCascade) return;
+    const { item, action } = choosingCascade;
+    setChoosingCascade(null);
+    if (action === 'edit') {
+      setCascadeScope(scope);
+      setEditing(item);
+    } else {
+      deleteMut.mutate({ id: item.id, installmentGroup: item.installment_group, scope, dueDate: item.due_date });
     }
   };
 
@@ -338,8 +380,8 @@ export default function FutureTransactions() {
             <CheckCircle className="w-3.5 h-3.5 text-income" />
           </Button>
         )}
-        <Button variant="ghost" size="icon" className="h-8 w-8 hidden sm:flex" onClick={() => handleEdit(item)}><Pencil className="w-3.5 h-3.5" /></Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8 hidden sm:flex hover:text-destructive" onClick={() => handleDelete(item)}><Trash2 className="w-3.5 h-3.5" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(item)}><Pencil className="w-3.5 h-3.5" /></Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-destructive" onClick={() => handleDelete(item)}><Trash2 className="w-3.5 h-3.5" /></Button>
       </div>
     </div>
   );
@@ -396,10 +438,18 @@ export default function FutureTransactions() {
         </div>
       )}
 
+      {/* Cascade choice dialog */}
+      <Dialog open={!!choosingCascade} onOpenChange={open => !open && setChoosingCascade(null)}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader><DialogTitle>{choosingCascade?.action === 'edit' ? 'Editar Lançamento' : 'Excluir Lançamento'}</DialogTitle></DialogHeader>
+          {choosingCascade && <CascadeChoiceDialog item={choosingCascade.item} onChoice={handleCascadeChoice} onClose={() => setChoosingCascade(null)} />}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!editing} onOpenChange={open => !open && setEditing(null)}>
         <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Editar Lançamento</DialogTitle></DialogHeader>
-          {editing && <FutureDialog item={editing} onClose={() => setEditing(null)} cascadeEdit={cascadeEdit} />}
+          {editing && <FutureDialog item={editing} onClose={() => setEditing(null)} cascadeScope={cascadeScope} />}
         </DialogContent>
       </Dialog>
 
