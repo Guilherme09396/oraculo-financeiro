@@ -25,7 +25,7 @@ function IncomeDialog({ transaction, onClose }: { transaction?: any; onClose: ()
   const [description, setDescription] = useState(transaction?.description || '');
   const [amount, setAmount] = useState(transaction ? String(transaction.amount) : '');
   const [categoryId, setCategoryId] = useState(transaction?.category_id || '');
-  const [date, setDate] = useState(transaction?.date || new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(transaction?.date || new Date().toLocaleDateString('en-CA'));
   const [paymentMethod, setPaymentMethod] = useState(transaction?.payment_method || '');
   const [receiptUrl, setReceiptUrl] = useState((transaction as any)?.receipt_url || '');
   const [uploading, setUploading] = useState(false);

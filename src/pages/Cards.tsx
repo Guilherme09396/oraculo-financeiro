@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { useCreateTransaction } from '@/hooks/useTransactions';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,7 @@ import ReceiptPreviewDialog from '@/components/ReceiptPreviewDialog';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, Trash2, CreditCard, Pencil, TrendingDown, ChevronDown, ChevronUp, FileText } from 'lucide-react';
+import { Plus, Trash2, CreditCard, Pencil, TrendingDown, ChevronDown, ChevronUp, FileText, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 
 const CARD_COLORS = ['#6366f1', '#22c55e', '#ef4444', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
@@ -85,6 +86,83 @@ function CardDialog({ card, onClose }: { card?: any; onClose: () => void }) {
   );
 }
 
+function PayInvoiceDialog({ card, spent, onClose }: { card: any; spent: number; onClose: () => void }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [amount, setAmount] = useState(String(spent));
+  const [paidDate, setPaidDate] = useState(new Date().toLocaleDateString('en-CA'));
+  const [receiptUrl, setReceiptUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async (file: File) => {
+    if (!user) return;
+    setUploading(true);
+    const path = `${user.id}/${crypto.randomUUID()}.${file.name.split('.').pop()}`;
+    const { error } = await supabase.storage.from('receipts').upload(path, file);
+    if (error) { toast.error('Erro ao enviar'); setUploading(false); return; }
+    setReceiptUrl(supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl);
+    setUploading(false);
+  };
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      // Create a real expense transaction for the invoice payment (via pix)
+      const { error } = await supabase.from('transactions').insert({
+        user_id: user!.id,
+        description: `Pagamento fatura ${card.name}`,
+        amount: parseFloat(amount),
+        type: 'expense',
+        date: paidDate,
+        payment_method: 'pix',
+        category_id: null,
+        receipt_url: receiptUrl || null,
+        notes: `Fatura do cartão ${card.name}`,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] });
+      toast.success('Fatura paga! Despesa registrada no mês do pagamento.');
+      onClose();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Cartão: <strong className="text-foreground">{card.name}</strong>
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Fatura atual: <strong className="text-expense">{formatCurrency(spent)}</strong>
+      </p>
+      <div className="space-y-2">
+        <Label>Valor a pagar</Label>
+        <Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="bg-secondary border-border" required />
+      </div>
+      <div className="space-y-2">
+        <Label>Data do pagamento</Label>
+        <Input type="date" value={paidDate} onChange={e => setPaidDate(e.target.value)} className="bg-secondary border-border" required />
+      </div>
+      <div className="space-y-2">
+        <Label>Comprovante</Label>
+        {receiptUrl ? (
+          <div className="flex items-center gap-2">
+            <span className="text-primary text-sm">✅ Comprovante anexado</span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setReceiptUrl('')}>Remover</Button>
+          </div>
+        ) : <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        💡 Uma despesa será criada com método PIX na data informada, impactando o saldo do mês correspondente.
+      </p>
+      <Button onClick={() => mut.mutate()} className="w-full gradient-primary" disabled={mut.isPending}>
+        {mut.isPending ? 'Registrando...' : 'Pagar Fatura'}
+      </Button>
+    </div>
+  );
+}
+
 export default function Cards() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
@@ -96,6 +174,7 @@ export default function Cards() {
   const [editing, setEditing] = useState<any>(null);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
+  const [payingInvoice, setPayingInvoice] = useState<{ card: any; spent: number } | null>(null);
 
   const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
@@ -194,6 +273,16 @@ export default function Cards() {
                   </div>
                   <div className="text-right text-xs text-muted-foreground">{pct.toFixed(0)}% utilizado</div>
 
+                  {spent > 0 && (
+                    <Button
+                      variant="outline"
+                      className="w-full gap-2"
+                      onClick={() => setPayingInvoice({ card, spent })}
+                    >
+                      <Wallet className="w-4 h-4" /> Pagar Fatura
+                    </Button>
+                  )}
+
                   {cardTx.length > 0 && (
                     <div className="pt-4 border-t border-border">
                       <button
@@ -237,6 +326,13 @@ export default function Cards() {
         <DialogContent className="bg-card border-border">
           <DialogHeader><DialogTitle>Editar Cartão</DialogTitle></DialogHeader>
           {editing && <CardDialog card={editing} onClose={() => setEditing(null)} />}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!payingInvoice} onOpenChange={open => !open && setPayingInvoice(null)}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader><DialogTitle>Pagar Fatura</DialogTitle></DialogHeader>
+          {payingInvoice && <PayInvoiceDialog card={payingInvoice.card} spent={payingInvoice.spent} onClose={() => setPayingInvoice(null)} />}
         </DialogContent>
       </Dialog>
 

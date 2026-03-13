@@ -26,7 +26,7 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
   const [description, setDescription] = useState(transaction?.description || '');
   const [amount, setAmount] = useState(transaction ? String(transaction.amount) : '');
   const [categoryId, setCategoryId] = useState(transaction?.category_id || '');
-  const [date, setDate] = useState(transaction?.date || new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(transaction?.date || new Date().toLocaleDateString('en-CA'));
   const [paymentMethod, setPaymentMethod] = useState(transaction?.payment_method || '');
   const [cardId, setCardId] = useState((transaction as any)?.card_id || '');
   const [receiptUrl, setReceiptUrl] = useState((transaction as any)?.receipt_url || '');
@@ -179,7 +179,10 @@ export default function Expenses() {
                   <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-expense/15 flex items-center justify-center shrink-0"><TrendingDown className="w-4 h-4 sm:w-5 sm:h-5 text-expense" /></div>
                   <div className="min-w-0">
                     <p className="font-medium text-foreground text-sm sm:text-base truncate">{t.description}</p>
-                    <p className="text-xs text-muted-foreground truncate">{formatDate(t.date)} · {(t as any).categories?.name || 'Sem categoria'}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {formatDate(t.date)} · {(t as any).categories?.name || 'Sem categoria'}
+                      {t.payment_method === 'credit_card' && ' · 💳 Cartão'}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 shrink-0">
