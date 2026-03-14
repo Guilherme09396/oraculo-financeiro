@@ -17,6 +17,28 @@ import {
 import { Plus, Trash2, CreditCard, Pencil, TrendingDown, ChevronDown, ChevronUp, FileText, Wallet, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+function getInvoicePeriod(month: number, year: number, closingDay: number) {
+  const periodStart = new Date(year, month - 1, closingDay + 1);
+  const periodEnd = new Date(year, month, closingDay);
+
+  if (periodStart > periodEnd) {
+    periodStart.setMonth(periodStart.getMonth() - 1);
+  }
+
+  const formatDateISO = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  return {
+    start: formatDateISO(periodStart),
+    end: formatDateISO(periodEnd)
+  };
+}
+
+
 const CARD_COLORS = ['#6366f1', '#22c55e', '#ef4444', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
 
 const MONTH_NAMES = [
@@ -232,23 +254,20 @@ export default function Cards() {
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
   const [payingInvoice, setPayingInvoice] = useState<{ card: any; spent: number; alreadyPaid: number } | null>(null);
 
-  const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-  const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
-  const { data: cardTransactions = [] } = useQuery({
-    queryKey: ['card_transactions', startOfMonth, endOfMonth],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('transactions')
-        .select('*, categories(name, icon, color)')
-        .not('card_id', 'is', null)
-        .gte('date', startOfMonth)
-        .lte('date', endOfMonth)
-        .order('date', { ascending: false });
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!user,
-  });
+  const { data: allCardTransactions = [] } = useQuery({
+  queryKey: ['card_transactions'],
+  queryFn: async () => {
+    const { data, error } = await supabase.from('transactions')
+      .select('*, categories(name, icon, color)')
+      .not('card_id', 'is', null)
+      .order('date', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+  enabled: !!user,
+});
+
 
   const { data: allPayments = [] } = useQuery({
     queryKey: ['invoice_payments'],
@@ -305,7 +324,14 @@ export default function Cards() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {cards.map((card: any) => {
-            const cardTx = cardTransactions.filter((t: any) => t.card_id === card.id && t.type === 'expense');
+            const period = getInvoicePeriod(month, year, card.closing_day);
+  
+            const cardTx = allCardTransactions.filter((t: any) => 
+              t.card_id === card.id && 
+              t.type === 'expense' &&
+              t.date >= period.start &&
+              t.date <= period.end
+            );
             const spent = cardTx.reduce((s: number, t: any) => s + Number(t.amount), 0);
             const pct = card.card_limit > 0 ? Math.min(100, (spent / Number(card.card_limit)) * 100) : 0;
             const available = Math.max(0, Number(card.card_limit) - spent);
