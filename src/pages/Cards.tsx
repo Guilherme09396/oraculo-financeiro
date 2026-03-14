@@ -14,10 +14,15 @@ import ReceiptPreviewDialog from '@/components/ReceiptPreviewDialog';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, Trash2, CreditCard, Pencil, TrendingDown, ChevronDown, ChevronUp, FileText, Wallet } from 'lucide-react';
+import { Plus, Trash2, CreditCard, Pencil, TrendingDown, ChevronDown, ChevronUp, FileText, Wallet, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 const CARD_COLORS = ['#6366f1', '#22c55e', '#ef4444', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
+
+const MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+];
 
 function useCards() {
   const { user } = useAuth();
@@ -86,13 +91,23 @@ function CardDialog({ card, onClose }: { card?: any; onClose: () => void }) {
   );
 }
 
-function PayInvoiceDialog({ card, spent, onClose }: { card: any; spent: number; onClose: () => void }) {
+function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
+  card: any;
+  spent: number;
+  alreadyPaid: number;
+  month: number;
+  year: number;
+  onClose: () => void
+}) {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [amount, setAmount] = useState(String(spent));
+  const remaining = spent - alreadyPaid;
+  const [amount, setAmount] = useState(String(remaining));
   const [paidDate, setPaidDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [receiptUrl, setReceiptUrl] = useState('');
   const [uploading, setUploading] = useState(false);
+
+  const monthName = MONTH_NAMES[month];
 
   const handleUpload = async (file: File) => {
     if (!user) return;
@@ -106,17 +121,39 @@ function PayInvoiceDialog({ card, spent, onClose }: { card: any; spent: number; 
 
   const mut = useMutation({
     mutationFn: async () => {
-      // Create a real expense transaction for the invoice payment (via pix)
+      const paymentAmount = parseFloat(amount);
+
+      if (paymentAmount > remaining) {
+        throw new Error(`O valor não pode ser maior que o restante da fatura (${formatCurrency(remaining)})`);
+      }
+
+      const { data: cardCategory } = await supabase
+        .from('categories')
+        .select('id')
+        .ilike('name', 'cartão')
+        .maybeSingle();
+
+      let categoryId = cardCategory?.id || null;
+
+      if (!categoryId) {
+        const { data: cardCategoryAlt } = await supabase
+          .from('categories')
+          .select('id')
+          .ilike('name', 'cartao')
+          .maybeSingle();
+        categoryId = cardCategoryAlt?.id || null;
+      }
+
       const { error } = await supabase.from('transactions').insert({
         user_id: user!.id,
-        description: `Pagamento fatura ${card.name}`,
-        amount: parseFloat(amount),
+        description: `Pagamento fatura ${card.name} - ${monthName}`,
+        amount: paymentAmount,
         type: 'expense',
         date: paidDate,
         payment_method: 'pix',
-        category_id: null,
+        category_id: categoryId,
         receipt_url: receiptUrl || null,
-        notes: `Fatura do cartão ${card.name}`,
+        notes: `Fatura do cartão ${card.name} referente a ${monthName}/${year}`,
       });
       if (error) throw error;
     },
@@ -134,11 +171,30 @@ function PayInvoiceDialog({ card, spent, onClose }: { card: any; spent: number; 
         Cartão: <strong className="text-foreground">{card.name}</strong>
       </p>
       <p className="text-sm text-muted-foreground">
-        Fatura atual: <strong className="text-expense">{formatCurrency(spent)}</strong>
+        Fatura de: <strong className="text-foreground">{monthName}/{year}</strong>
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Valor total: <strong className="text-expense">{formatCurrency(spent)}</strong>
+      </p>
+      {alreadyPaid > 0 && (
+        <p className="text-sm text-muted-foreground">
+          Já pago: <strong className="text-income">{formatCurrency(alreadyPaid)}</strong>
+        </p>
+      )}
+      <p className="text-sm text-muted-foreground">
+        Restante: <strong className="text-expense">{formatCurrency(remaining)}</strong>
       </p>
       <div className="space-y-2">
-        <Label>Valor a pagar</Label>
-        <Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="bg-secondary border-border" required />
+        <Label>Valor a pagar (máximo: {formatCurrency(remaining)})</Label>
+        <Input
+          type="number"
+          step="0.01"
+          max={remaining}
+          value={amount}
+          onChange={e => setAmount(e.target.value)}
+          className="bg-secondary border-border"
+          required
+        />
       </div>
       <div className="space-y-2">
         <Label>Data do pagamento</Label>
@@ -154,7 +210,7 @@ function PayInvoiceDialog({ card, spent, onClose }: { card: any; spent: number; 
         ) : <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />}
       </div>
       <p className="text-xs text-muted-foreground">
-        💡 Uma despesa será criada com método PIX na data informada, impactando o saldo do mês correspondente.
+        💡 Uma despesa será criada com categoria "Cartão" e método PIX na data informada, impactando o saldo do mês correspondente.
       </p>
       <Button onClick={() => mut.mutate()} className="w-full gradient-primary" disabled={mut.isPending}>
         {mut.isPending ? 'Registrando...' : 'Pagar Fatura'}
@@ -174,7 +230,7 @@ export default function Cards() {
   const [editing, setEditing] = useState<any>(null);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
-  const [payingInvoice, setPayingInvoice] = useState<{ card: any; spent: number } | null>(null);
+  const [payingInvoice, setPayingInvoice] = useState<{ card: any; spent: number; alreadyPaid: number } | null>(null);
 
   const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
@@ -194,6 +250,21 @@ export default function Cards() {
     enabled: !!user,
   });
 
+  const { data: allPayments = [] } = useQuery({
+    queryKey: ['invoice_payments'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('transactions')
+        .select('*')
+        .eq('type', 'expense')
+        .eq('payment_method', 'pix')
+        .like('description', 'Pagamento fatura %')
+        .order('date', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
   const deleteMut = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('credit_cards').delete().eq('id', id);
@@ -201,6 +272,8 @@ export default function Cards() {
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['credit_cards'] }); toast.success('Cartão removido!'); },
   });
+
+  const monthName = MONTH_NAMES[month];
 
   return (
     <div className="space-y-6">
@@ -238,6 +311,13 @@ export default function Cards() {
             const available = Math.max(0, Number(card.card_limit) - spent);
             const isExpanded = expandedCard === card.id;
 
+            const payments = allPayments.filter((p: any) =>
+              p.description.includes(card.name) && p.description.includes(monthName)
+            );
+            const alreadyPaid = payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
+            const remaining = spent - alreadyPaid;
+            const isFullyPaid = alreadyPaid >= spent && spent > 0;
+
             return (
               <Card key={card.id} className="bg-card border-border overflow-hidden animate-fade-in">
                 <div className="p-5 sm:p-6 relative" style={{ background: `linear-gradient(135deg, ${card.color}, ${card.color}88)` }}>
@@ -273,14 +353,39 @@ export default function Cards() {
                   </div>
                   <div className="text-right text-xs text-muted-foreground">{pct.toFixed(0)}% utilizado</div>
 
+                  {alreadyPaid > 0 && (
+                    <div className="pt-3 pb-2 border-t border-border space-y-1">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Já pago</span>
+                        <span className="text-income font-mono font-semibold">{formatCurrency(alreadyPaid)}</span>
+                      </div>
+                      {!isFullyPaid && (
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Restante</span>
+                          <span className="text-expense font-mono font-semibold">{formatCurrency(remaining)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {spent > 0 && (
-                    <Button
-                      variant="outline"
-                      className="w-full gap-2"
-                      onClick={() => setPayingInvoice({ card, spent })}
-                    >
-                      <Wallet className="w-4 h-4" /> Pagar Fatura
-                    </Button>
+                    <>
+                      {isFullyPaid ? (
+                        <div className="flex items-center justify-center gap-2 p-3 bg-income/10 border border-income/20 rounded-lg">
+                          <CheckCircle2 className="w-5 h-5 text-income" />
+                          <span className="text-income font-semibold">Fatura Paga</span>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          className="w-full gap-2"
+                          onClick={() => setPayingInvoice({ card, spent, alreadyPaid })}
+                        >
+                          <Wallet className="w-4 h-4" />
+                          {alreadyPaid > 0 ? `Pagar Restante (${formatCurrency(remaining)})` : 'Pagar Fatura'}
+                        </Button>
+                      )}
+                    </>
                   )}
 
                   {cardTx.length > 0 && (
@@ -315,6 +420,23 @@ export default function Cards() {
                       )}
                     </div>
                   )}
+
+                  {payments.length > 0 && (
+                    <div className="pt-4 border-t border-border">
+                      <p className="text-xs text-muted-foreground mb-2">Pagamentos realizados:</p>
+                      <div className="space-y-1">
+                        {payments.map((p: any) => (
+                          <div key={p.id} className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">{formatDate(p.date)}</span>
+                            <span className="text-income font-mono">{formatCurrency(Number(p.amount))}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        💡 Para pagar novamente, exclua os pagamentos acima na aba de transações.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </Card>
             );
@@ -332,7 +454,16 @@ export default function Cards() {
       <Dialog open={!!payingInvoice} onOpenChange={open => !open && setPayingInvoice(null)}>
         <DialogContent className="bg-card border-border">
           <DialogHeader><DialogTitle>Pagar Fatura</DialogTitle></DialogHeader>
-          {payingInvoice && <PayInvoiceDialog card={payingInvoice.card} spent={payingInvoice.spent} onClose={() => setPayingInvoice(null)} />}
+          {payingInvoice && (
+            <PayInvoiceDialog
+              card={payingInvoice.card}
+              spent={payingInvoice.spent}
+              alreadyPaid={payingInvoice.alreadyPaid}
+              month={month}
+              year={year}
+              onClose={() => setPayingInvoice(null)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
