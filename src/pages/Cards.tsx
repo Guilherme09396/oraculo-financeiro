@@ -23,7 +23,6 @@ import {
   Plus,
   Trash2,
   Pencil,
-  CreditCard,
   Wallet,
 } from "lucide-react"
 
@@ -206,6 +205,7 @@ function PayInvoiceDialog({
 
       qc.invalidateQueries({ queryKey: ["transactions"] })
       qc.invalidateQueries({ queryKey: ["card_transactions"] })
+      qc.invalidateQueries({ queryKey: ["invoice_payments"] })
 
       toast.success("Pagamento registrado")
 
