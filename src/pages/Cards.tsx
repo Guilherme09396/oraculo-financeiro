@@ -181,6 +181,7 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] });
+      qc.invalidateQueries({ queryKey: ['invoice_payments'] });
       toast.success('Fatura paga! Despesa registrada no mês do pagamento.');
       onClose();
     },
