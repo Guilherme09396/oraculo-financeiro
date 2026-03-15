@@ -181,7 +181,7 @@ export default function Dashboard() {
   }, [transactions, futureItems, startOfMonth, endOfMonth]);
 
   const invoicePaymentsByCard = useMemo(() => {
-    const monthPayments = transactions.filter((t: any) =>
+    const prevMonthPayments = transactions.filter((t: any) =>
       t.date >= startOfMonth &&
       t.date <= endOfMonth &&
       t.type === 'expense' &&
@@ -189,7 +189,7 @@ export default function Dashboard() {
     );
 
     const map = new Map<string, number>();
-    monthPayments.forEach((t: any) => {
+    prevMonthPayments.forEach((t: any) => {
       const desc = t.description || '';
       cards.forEach((card: any) => {
         if (desc.includes(card.name)) {
@@ -228,23 +228,10 @@ export default function Dashboard() {
 
     if (cards.length > 0) {
       const todayDate = new Date();
-      const currentMonth = todayDate.getMonth();
-      const currentYear = todayDate.getFullYear();
-
       cards.forEach((card: any) => {
         const dueDay = card.due_day;
         const diff = dueDay - todayDate.getDate();
-
-        const invoiceAlreadyPaid = transactions.some((t: any) => {
-          const tDate = new Date(t.date);
-          return t.type === 'expense' &&
-            (t.description || '').startsWith('Pagamento fatura') &&
-            (t.description || '').includes(card.name) &&
-            tDate.getMonth() === currentMonth &&
-            tDate.getFullYear() === currentYear;
-        });
-
-        if (diff >= 0 && diff <= 5 && !invoiceAlreadyPaid) {
+        if (diff >= 0 && diff <= 5) {
           list.push({ text: `💳 Cartão ${card.name} vence em ${diff === 0 ? 'HOJE' : `${diff} dia(s)`}!`, type: diff <= 2 ? 'danger' : 'warning' });
         }
       });
@@ -267,7 +254,7 @@ export default function Dashboard() {
       if (achieved > 0) list.push({ text: `🎯 Parabéns! Você atingiu ${achieved} meta(s) financeira(s)!`, type: 'info' });
     }
     return list;
-  }, [stats, expenseByCategory, futureItems, goals, cards, transactions]);
+  }, [stats, expenseByCategory, futureItems, goals, cards]);
 
   const tooltipStyle = {
     contentStyle: { background: 'hsl(220, 18%, 10%)', border: '1px solid hsl(220, 14%, 16%)', borderRadius: '8px', color: 'hsl(210, 20%, 95%)' },
@@ -379,17 +366,17 @@ export default function Dashboard() {
           <h3 className="text-sm font-medium text-muted-foreground mb-4 flex items-center gap-2">
             <CreditCard className="w-4 h-4" /> Despesa por Cartão - Fatura {MONTH_NAMES[month]}/{year}
           </h3>
-          <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4 max-h-64 overflow-y-auto">
-            <ResponsiveContainer width="100%" height={180} className="sm:w-2/5 flex-shrink-0">
+          <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+            <ResponsiveContainer width="100%" height={200} className="sm:w-1/2">
               <PieChart>
-                <Pie data={invoicePaymentsByCard} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={2}>
+                <Pie data={invoicePaymentsByCard} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
                   {invoicePaymentsByCard.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
-            <div className="space-y-2 flex-1 w-full min-w-0">
+            <div className="space-y-2 flex-1 w-full">
               {invoicePaymentsByCard.map((card, i) => (
-                <div key={card.name} className="flex items-center justify-between text-sm gap-2">
+                <div key={card.name} className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
                     <span className="text-foreground truncate">{card.name}</span>
