@@ -404,27 +404,25 @@ export default function Dashboard() {
           <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
             <CreditCard className="w-4 h-4" /> Despesa por Cartão - Fatura {MONTH_NAMES[month]}/{year}
           </h3>
-          <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
-            <div className="w-full sm:w-[160px] shrink-0" style={{ height: 140 }}>
-              <ResponsiveContainer width="100%" height={140}>
-                <PieChart>
-                  <Pie data={invoicePaymentsByCard} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={35} outerRadius={60} paddingAngle={2}>
-                    {invoicePaymentsByCard.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="space-y-1.5 flex-1 w-full">
-              {invoicePaymentsByCard.map((card, i) => (
-                <div key={card.name} className="flex items-center justify-between text-sm gap-4">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
-                    <span className="text-foreground truncate text-xs">{card.name}</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {invoicePaymentsByCard.map((card, i) => {
+              const total = invoicePaymentsByCard.reduce((s, c) => s + c.value, 0);
+              const pct = total > 0 ? (card.value / total) * 100 : 0;
+              return (
+                <div key={card.name} className="flex items-center gap-3 p-3 rounded-lg bg-secondary">
+                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-sm text-foreground truncate">{card.name}</span>
+                      <span className="text-xs font-mono text-muted-foreground shrink-0">{formatCurrency(card.value)}</span>
+                    </div>
+                    <div className="h-1.5 bg-background rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                    </div>
                   </div>
-                  <span className="text-muted-foreground font-mono text-xs shrink-0">{formatCurrency(card.value)}</span>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </Card>
       )}
