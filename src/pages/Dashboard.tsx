@@ -15,8 +15,6 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { ..., ChevronLeft, ChevronRight } from 'lucide-react';
-
 
 const CHART_COLORS = [
   'hsl(142, 60%, 45%)', 'hsl(199, 89%, 48%)', 'hsl(38, 92%, 55%)',
@@ -82,7 +80,6 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { data: profile } = useProfile();
   const { data: transactions = [] } = useTransactions();
-  const [categoryView, setCategoryView] = useState(0);
 
   const { data: futureItems = [] } = useQuery({
     queryKey: ['future_transactions'],
@@ -388,57 +385,59 @@ export default function Dashboard() {
         </Card>
 
         <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-medium text-muted-foreground">
-              {categoryView === 0 ? 'Despesas por Categoria' : 'Gastos no Cartão por Categoria'}
-            </h3>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setCategoryView(0)}
-                className={`p-1 rounded transition-colors ${categoryView === 0 ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-xs text-muted-foreground">{categoryView + 1}/2</span>
-              <button
-                onClick={() => setCategoryView(1)}
-                className={`p-1 rounded transition-colors ${categoryView === 1 ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">
-            {categoryView === 0 ? 'Exclui gastos no cartão e pagamentos de fatura' : 'Apenas gastos lançados no crédito este mês'}
-          </p>
-          {(() => {
-            const data = categoryView === 0 ? expenseByCategory : creditCardByCategory;
-            return data.length > 0 ? (
-              <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
-                <ResponsiveContainer width="100%" height={200} className="sm:w-1/2">
-                  <PieChart>
-                    <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
-                      {data.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="space-y-2 flex-1 w-full">
-                  {data.slice(0, 6).map((cat, i) => (
-                    <div key={cat.name} className="flex items-center justify-between text-sm gap-4">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
-                        <span className="text-foreground truncate">{cat.name}</span>
-                      </div>
-                      <span className="text-muted-foreground font-mono text-xs shrink-0">{formatCurrency(cat.value)}</span>
+          <h3 className="text-sm font-medium text-muted-foreground mb-4">Despesas por Categoria</h3>
+          <p className="text-xs text-muted-foreground mb-3">Exclui gastos no cartão e pagamentos de fatura</p>
+          {expenseByCategory.length > 0 ? (
+            <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+              <ResponsiveContainer width="100%" height={200} className="sm:w-1/2">
+                <PieChart>
+                  <Pie data={expenseByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
+                    {expenseByCategory.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-2 flex-1 w-full">
+                {expenseByCategory.slice(0, 6).map((cat, i) => (
+                  <div key={cat.name} className="flex items-center justify-between text-sm gap-4">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                      <span className="text-foreground truncate">{cat.name}</span>
                     </div>
-                  ))}
-                </div>
+                    <span className="text-muted-foreground font-mono text-xs shrink-0">{formatCurrency(cat.value)}</span>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <div className="flex items-center justify-center h-[200px] text-muted-foreground text-sm">Sem despesas neste período</div>
-            );
-          })()}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-[200px] text-muted-foreground text-sm">Sem despesas neste período</div>
+          )}
         </Card>
+        {creditCardByCategory.length > 0 && (
+          <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
+            <h3 className="text-sm font-medium text-muted-foreground mb-4">Gastos no Cartão por Categoria</h3>
+            <p className="text-xs text-muted-foreground mb-3">Apenas gastos lançados no crédito este mês</p>
+            <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+              <ResponsiveContainer width="100%" height={200} className="sm:w-1/2">
+                <PieChart>
+                  <Pie data={creditCardByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
+                    {creditCardByCategory.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-2 flex-1 w-full">
+                {creditCardByCategory.slice(0, 6).map((cat, i) => (
+                  <div key={cat.name} className="flex items-center justify-between text-sm gap-4">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                      <span className="text-foreground truncate">{cat.name}</span>
+                    </div>
+                    <span className="text-muted-foreground font-mono text-xs shrink-0">{formatCurrency(cat.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
 
       {invoicePaymentsByCard.length > 0 && (
