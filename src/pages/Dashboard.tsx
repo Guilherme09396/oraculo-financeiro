@@ -10,6 +10,7 @@ import MonthSelector from '@/components/MonthSelector';
 import {
   TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight,
   PiggyBank, Activity, AlertTriangle, Clock, Target, DollarSign, CreditCard,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
