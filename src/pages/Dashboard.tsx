@@ -120,25 +120,45 @@ export default function Dashboard() {
   const startOfPrevMonth = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-01`;
   const endOfPrevMonth = `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-${new Date(prevYear, prevMonth + 1, 0).getDate()}`;
 
+  // Saldo acumulado: inclui pagamentos de fatura pois são saídas reais de dinheiro
   const cumulativeBalance = useMemo(() => {
-    const allIncome = transactions.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + Number(t.amount), 0);
-    const allExpense = transactions.filter((t: any) => t.type === 'expense' && t.payment_method !== 'credit_card' && !(t.description || '').startsWith('Pagamento fatura')).reduce((s: number, t: any) => s + Number(t.amount), 0);
-    const paidFutureIncome = futureItems.filter((f: any) => f.status === 'paid' && f.type === 'income').reduce((s: number, f: any) => s + Number(f.amount), 0);
-    const paidFutureExpense = futureItems.filter((f: any) => f.status === 'paid' && f.type === 'expense').reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const allIncome = transactions
+      .filter((t: any) => t.type === 'income')
+      .reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const allExpense = transactions
+      .filter((t: any) => t.type === 'expense' && t.payment_method !== 'credit_card')
+      .reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const paidFutureIncome = futureItems
+      .filter((f: any) => f.status === 'paid' && f.type === 'income')
+      .reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const paidFutureExpense = futureItems
+      .filter((f: any) => f.status === 'paid' && f.type === 'expense')
+      .reduce((s: number, f: any) => s + Number(f.amount), 0);
     return (allIncome + paidFutureIncome) - (allExpense + paidFutureExpense);
   }, [transactions, futureItems]);
 
   const stats = useMemo(() => {
     const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth);
-    const income = monthly.filter((t: any) => t.type === 'income').reduce((s: number, t: any) => s + Number(t.amount), 0);
-    const expenses = monthly.filter((t: any) => t.type === 'expense' && t.payment_method !== 'credit_card' && !(t.description || '').startsWith('Pagamento fatura')).reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const income = monthly
+      .filter((t: any) => t.type === 'income')
+      .reduce((s: number, t: any) => s + Number(t.amount), 0);
+
+    // Despesas do mês: exclui gastos no crédito (ainda não saíram do bolso),
+    // mas INCLUI pagamentos de fatura (que são saídas reais de dinheiro)
+    const expenses = monthly
+      .filter((t: any) => t.type === 'expense' && t.payment_method !== 'credit_card')
+      .reduce((s: number, t: any) => s + Number(t.amount), 0);
 
     const paidFuture = futureItems.filter((f: any) => {
       const paidAt = (f as any).paid_at;
       return f.status === 'paid' && paidAt && paidAt >= startOfMonth && paidAt <= endOfMonth;
     });
-    const futureExpPaid = paidFuture.filter((f: any) => f.type === 'expense').reduce((s: number, f: any) => s + Number(f.amount), 0);
-    const futureIncPaid = paidFuture.filter((f: any) => f.type === 'income').reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const futureExpPaid = paidFuture
+      .filter((f: any) => f.type === 'expense')
+      .reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const futureIncPaid = paidFuture
+      .filter((f: any) => f.type === 'income')
+      .reduce((s: number, f: any) => s + Number(f.amount), 0);
 
     const totalIncome = income + futureIncPaid;
     const totalExpenses = expenses + futureExpPaid;
@@ -146,10 +166,16 @@ export default function Dashboard() {
     const savings = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome * 100) : 0;
 
     const pendingFuture = futureItems.filter((f: any) => f.status === 'pending');
-    const toReceive = pendingFuture.filter((f: any) => f.type === 'income' && f.due_date >= startOfMonth && f.due_date <= endOfMonth).reduce((s: number, f: any) => s + Number(f.amount), 0);
-    const toPay = pendingFuture.filter((f: any) => f.type === 'expense' && f.due_date >= startOfMonth && f.due_date <= endOfMonth).reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const toReceive = pendingFuture
+      .filter((f: any) => f.type === 'income' && f.due_date >= startOfMonth && f.due_date <= endOfMonth)
+      .reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const toPay = pendingFuture
+      .filter((f: any) => f.type === 'expense' && f.due_date >= startOfMonth && f.due_date <= endOfMonth)
+      .reduce((s: number, f: any) => s + Number(f.amount), 0);
 
-    const cardSpending = monthly.filter((t: any) => t.type === 'expense' && t.payment_method === 'credit_card').reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const cardSpending = monthly
+      .filter((t: any) => t.type === 'expense' && t.payment_method === 'credit_card')
+      .reduce((s: number, t: any) => s + Number(t.amount), 0);
 
     const goalsProgress = goals.length > 0
       ? goals.reduce((s: number, g: any) => s + Math.min(1, Number(g.current_amount) / Number(g.target_amount)), 0) / goals.length * 20
@@ -163,8 +189,16 @@ export default function Dashboard() {
     return { income: totalIncome, expenses: totalExpenses, balance, savings, score, toReceive, toPay, transactionCount: monthly.length, cardSpending };
   }, [transactions, futureItems, goals, startOfMonth, endOfMonth]);
 
+  // Gráfico de categorias: exclui gastos no crédito E exclui pagamentos de fatura
+  // (fatura aparece em gráfico separado)
   const expenseByCategory = useMemo(() => {
-    const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth && t.type === 'expense' && !(t.description || '').startsWith('Pagamento fatura'));
+    const monthly = transactions.filter((t: any) =>
+      t.date >= startOfMonth &&
+      t.date <= endOfMonth &&
+      t.type === 'expense' &&
+      t.payment_method !== 'credit_card' &&
+      !(t.description || '').startsWith('Pagamento fatura')
+    );
     const map = new Map<string, number>();
     monthly.forEach((t: any) => {
       const name = (t as any).categories?.name || 'Sem categoria';
@@ -207,8 +241,12 @@ export default function Dashboard() {
     monthly.forEach((t: any) => {
       const day = t.date.slice(8, 10);
       const prev = map.get(day) || { income: 0, expense: 0 };
-      if (t.type === 'income') prev.income += Number(t.amount);
-      else if (t.payment_method !== 'credit_card' && !(t.description || '').startsWith('Pagamento fatura')) prev.expense += Number(t.amount);
+      if (t.type === 'income') {
+        prev.income += Number(t.amount);
+      } else if (t.payment_method !== 'credit_card') {
+        // inclui pagamentos de fatura no gráfico diário pois são despesas reais
+        prev.expense += Number(t.amount);
+      }
       map.set(day, prev);
     });
     return Array.from(map.entries()).map(([day, v]) => ({ day, ...v })).sort((a, b) => a.day.localeCompare(b.day));
@@ -333,7 +371,7 @@ export default function Dashboard() {
 
         <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
           <h3 className="text-sm font-medium text-muted-foreground mb-4">Despesas por Categoria</h3>
-          <p className="text-xs text-muted-foreground mb-3">Inclui gastos no cartão (exclui pagamentos de fatura)</p>
+          <p className="text-xs text-muted-foreground mb-3">Exclui gastos no cartão e pagamentos de fatura</p>
           {expenseByCategory.length > 0 ? (
             <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
               <ResponsiveContainer width="100%" height={200} className="sm:w-1/2">
@@ -345,7 +383,7 @@ export default function Dashboard() {
               </ResponsiveContainer>
               <div className="space-y-2 flex-1 w-full">
                 {expenseByCategory.slice(0, 6).map((cat, i) => (
-                  <div key={cat.name} className="flex items-center justify-between text-sm">
+                  <div key={cat.name} className="flex items-center justify-between text-sm gap-4">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
                       <span className="text-foreground truncate">{cat.name}</span>
@@ -362,26 +400,28 @@ export default function Dashboard() {
       </div>
 
       {invoicePaymentsByCard.length > 0 && (
-        <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
-          <h3 className="text-sm font-medium text-muted-foreground mb-4 flex items-center gap-2">
+        <Card className="p-4 sm:p-5 bg-card border-border animate-fade-in">
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
             <CreditCard className="w-4 h-4" /> Despesa por Cartão - Fatura {MONTH_NAMES[month]}/{year}
           </h3>
-          <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
-            <ResponsiveContainer width="100%" height={200} className="sm:w-1/2">
-              <PieChart>
-                <Pie data={invoicePaymentsByCard} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
-                  {invoicePaymentsByCard.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="space-y-2 flex-1 w-full">
+          <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
+            <div className="w-full sm:w-auto shrink-0">
+              <ResponsiveContainer width="100%" height={140}>
+                <PieChart>
+                  <Pie data={invoicePaymentsByCard} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={35} outerRadius={60} paddingAngle={2}>
+                    {invoicePaymentsByCard.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="space-y-1.5 flex-1 w-full">
               {invoicePaymentsByCard.map((card, i) => (
-                <div key={card.name} className="flex items-center justify-between text-sm">
+                <div key={card.name} className="flex items-center justify-between text-sm gap-4">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
                     <span className="text-foreground truncate text-xs">{card.name}</span>
                   </div>
-                  <span className="text-muted-foreground font-mono text-xs shrink-0">   {formatCurrency(card.value)}</span>
+                  <span className="text-muted-foreground font-mono text-xs shrink-0">{formatCurrency(card.value)}</span>
                 </div>
               ))}
             </div>
