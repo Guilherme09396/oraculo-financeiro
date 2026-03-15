@@ -387,6 +387,7 @@ export default function Dashboard() {
           )}
         </Card>
 
+      <div key={categoryView} className="animate-fade-in">
         <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
           <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-medium text-muted-foreground">
@@ -439,6 +440,7 @@ export default function Dashboard() {
             );
           })()}
         </Card>
+      </div>
       </div>
 
       {invoicePaymentsByCard.length > 0 && (
