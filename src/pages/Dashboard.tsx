@@ -405,7 +405,7 @@ export default function Dashboard() {
             <CreditCard className="w-4 h-4" /> Despesa por Cartão - Fatura {MONTH_NAMES[month]}/{year}
           </h3>
           <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
-            <div className="w-full sm:w-auto shrink-0">
+            <div className="w-full sm:w-[160px] shrink-0" style={{ height: 140 }}>
               <ResponsiveContainer width="100%" height={140}>
                 <PieChart>
                   <Pie data={invoicePaymentsByCard} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={35} outerRadius={60} paddingAngle={2}>
