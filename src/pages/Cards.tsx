@@ -326,9 +326,9 @@ export default function Cards() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {cards.map((card: any) => {
             const period = getInvoicePeriod(month, year, card.closing_day);
-  
-            const cardTx = allCardTransactions.filter((t: any) => 
-              t.card_id === card.id && 
+
+            const cardTx = allCardTransactions.filter((t: any) =>
+              t.card_id === card.id &&
               t.type === 'expense' &&
               t.date >= period.start &&
               t.date <= period.end
