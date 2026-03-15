@@ -379,7 +379,7 @@ export default function Dashboard() {
                 <div key={card.name} className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
-                    <span className="text-foreground truncate">{card.name}</span>
+                    <span className="text-foreground truncate text-xs">{card.name}</span>
                   </div>
                   <span className="text-muted-foreground font-mono text-xs shrink-0">   {formatCurrency(card.value)}</span>
                 </div>
