@@ -381,7 +381,7 @@ export default function Dashboard() {
                     <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
                     <span className="text-foreground truncate">{card.name}</span>
                   </div>
-                  <span className="text-muted-foreground font-mono text-xs shrink-0">{formatCurrency(card.value)}</span>
+                  <span className="text-muted-foreground font-mono text-xs shrink-0">   {formatCurrency(card.value)}</span>
                 </div>
               ))}
             </div>
