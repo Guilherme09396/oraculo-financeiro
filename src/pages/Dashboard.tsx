@@ -417,7 +417,7 @@ export default function Dashboard() {
               <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
                 <ResponsiveContainer width="100%" height={200} className="sm:w-1/2">
                   <PieChart>
-                    <Pie data={data} dataKey="value" nameKey="name" cx={"50%"} cy={"50%"} innerRadius={50} outerRadius={80} paddingAngle={2}>
+                    <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
                       {data.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                     </Pie>
                   </PieChart>
