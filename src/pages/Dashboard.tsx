@@ -196,7 +196,6 @@ export default function Dashboard() {
       t.date >= startOfMonth &&
       t.date <= endOfMonth &&
       t.type === 'expense' &&
-      t.payment_method !== 'credit_card' &&
       !(t.description || '').startsWith('Pagamento fatura')
     );
     const map = new Map<string, number>();
@@ -371,7 +370,7 @@ export default function Dashboard() {
 
         <Card className="p-5 sm:p-6 bg-card border-border animate-fade-in">
           <h3 className="text-sm font-medium text-muted-foreground mb-4">Despesas por Categoria</h3>
-          <p className="text-xs text-muted-foreground mb-3">Exclui gastos no cartão e pagamentos de fatura</p>
+          <p className="text-xs text-muted-foreground mb-3">Inclui gastos no cartão · Exclui pagamentos de fatura</p>
           {expenseByCategory.length > 0 ? (
             <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
               <ResponsiveContainer width="100%" height={200} className="sm:w-1/2">
