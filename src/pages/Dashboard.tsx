@@ -141,17 +141,13 @@ export default function Dashboard() {
   }, [transactions, futureItems]);
 
   const stats = useMemo(() => {
-    const monthly = transactions.filter((t: any) => {
-      // usa real_month e real_year se existirem, senão pega a data normal
-      const monthToUse = t.real_month ?? new Date(t.date).getMonth() + 1;
-      const yearToUse = t.real_year ?? new Date(t.date).getFullYear();
-      return monthToUse === month + 1 && yearToUse === year;
-    });
-
+    const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth);
     const income = monthly
       .filter((t: any) => t.type === 'income')
       .reduce((s: number, t: any) => s + Number(t.amount), 0);
 
+    // Despesas do mês: exclui gastos no crédito (ainda não saíram do bolso),
+    // mas INCLUI pagamentos de fatura (que são saídas reais de dinheiro)
     const expenses = monthly
       .filter((t: any) => t.type === 'expense' && t.payment_method !== 'credit_card')
       .reduce((s: number, t: any) => s + Number(t.amount), 0);
@@ -160,7 +156,6 @@ export default function Dashboard() {
       const paidAt = (f as any).paid_at;
       return f.status === 'paid' && paidAt && paidAt >= startOfMonth && paidAt <= endOfMonth;
     });
-
     const futureExpPaid = paidFuture
       .filter((f: any) => f.type === 'expense')
       .reduce((s: number, f: any) => s + Number(f.amount), 0);
@@ -181,8 +176,21 @@ export default function Dashboard() {
       .filter((f: any) => f.type === 'expense' && f.due_date >= startOfMonth && f.due_date <= endOfMonth)
       .reduce((s: number, f: any) => s + Number(f.amount), 0);
 
-    return { totalIncome, totalExpenses, balance, savings, toReceive, toPay };
-  }, [transactions, futureItems, month, year]);
+    const cardSpending = monthly
+      .filter((t: any) => t.type === 'expense' && t.payment_method === 'credit_card')
+      .reduce((s: number, t: any) => s + Number(t.amount), 0);
+
+    const goalsProgress = goals.length > 0
+      ? goals.reduce((s: number, g: any) => s + Math.min(1, Number(g.current_amount) / Number(g.target_amount)), 0) / goals.length * 20
+      : 10;
+    const savingsScore = Math.min(30, Math.max(0, savings * 0.6));
+    const expenseRatio = totalIncome > 0 ? Math.min(30, Math.max(0, (1 - totalExpenses / totalIncome) * 60)) : 15;
+    const overdueCount = pendingFuture.filter((f: any) => f.due_date < new Date().toISOString().split('T')[0]).length;
+    const overdueScore = Math.max(0, 20 - overdueCount * 5);
+    const score = Math.round(Math.min(100, savingsScore + expenseRatio + goalsProgress + overdueScore));
+
+    return { income: totalIncome, expenses: totalExpenses, balance, savings, score, toReceive, toPay, transactionCount: monthly.length, cardSpending };
+  }, [transactions, futureItems, goals, startOfMonth, endOfMonth]);
 
   // Gráfico de categorias: exclui gastos no crédito E exclui pagamentos de fatura
   // (fatura aparece em gráfico separado)
