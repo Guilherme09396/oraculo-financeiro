@@ -339,7 +339,7 @@ export default function Cards() {
               .filter((t: any) => {
                 if (t.card_id !== card.id) return false;
 
-                const isPending = t.status ? t.status === 'pending' : true;
+                const isPending = !t.status || t.status === 'pending';
 
                 return isPending;
               })

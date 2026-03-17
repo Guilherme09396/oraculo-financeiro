@@ -87,7 +87,9 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
         });
       }
 
-      await create.mutateAsync(transactions);
+      for (const t of transactions) {
+        await create.mutateAsync(t);
+      }
 
     } else {
 
