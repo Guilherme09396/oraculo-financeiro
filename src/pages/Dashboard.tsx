@@ -176,14 +176,31 @@ export default function Dashboard() {
       .filter((f: any) => f.type === 'expense' && f.due_date >= startOfMonth && f.due_date <= endOfMonth)
       .reduce((s: number, f: any) => s + Number(f.amount), 0);
 
-    const cardSpending = transactions
-    .filter((t: any) => t.type === 'expense' && t.payment_method === 'credit_card')
-    .filter((t: any) => {
-      const monthToUse = t.real_month ?? new Date(t.date).getMonth() + 1;
-      const yearToUse = t.real_year ?? new Date(t.date).getFullYear();
-      return monthToUse === month + 1 && yearToUse === year;
-    })
-    .reduce((s: number, t: any) => s + Number(t.amount), 0);
+    const cardSpending = useMemo(() => {
+      // Inclui transações de cartão do mês/ano correto
+      const monthlyCardTx = transactions.filter((t: any) => 
+        t.type === 'expense' && t.payment_method === 'credit_card'
+      ).filter((t: any) => {
+        const monthToUse = t.real_month ?? new Date(t.date).getMonth() + 1;
+        const yearToUse = t.real_year ?? new Date(t.date).getFullYear();
+        return monthToUse === month + 1 && yearToUse === year;
+      });
+
+      // Inclui pagamentos de fatura já quitados no mês atual
+      const paidFutureCardTx = futureItems.filter((f: any) => 
+        f.status === 'paid' &&
+        f.type === 'expense' &&
+        f.payment_method === 'credit_card' &&
+        (f.real_month ?? new Date(f.paid_at || f.due_date).getMonth() + 1) === month + 1 &&
+        (f.real_year ?? new Date(f.paid_at || f.due_date).getFullYear()) === year
+      );
+
+      const total = [...monthlyCardTx, ...paidFutureCardTx].reduce(
+        (s: number, t: any) => s + Number(t.amount), 0
+      );
+
+      return total;
+    }, [transactions, futureItems, month, year]);
 
     const goalsProgress = goals.length > 0
       ? goals.reduce((s: number, g: any) => s + Math.min(1, Number(g.current_amount) / Number(g.target_amount)), 0) / goals.length * 20
