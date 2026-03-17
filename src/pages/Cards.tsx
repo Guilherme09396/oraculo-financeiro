@@ -166,10 +166,6 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
         categoryId = cardCategoryAlt?.id || null;
       }
 
-      const invoiceDate = new Date(paidDate); // data real da compra
-      const realMonth = invoiceDate.getMonth() + 1; // 1-12
-      const realYear = invoiceDate.getFullYear();
-
       const { error } = await supabase.from('transactions').insert({
         user_id: user!.id,
         description: `Pagamento fatura ${card.name} - ${monthName}`,
@@ -180,24 +176,12 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
         category_id: categoryId,
         receipt_url: receiptUrl || null,
         notes: `Fatura do cartão ${card.name} referente a ${monthName}/${year}`,
-        real_month: realMonth,
-        real_year: realYear,
       });
       if (error) throw error;
-
-      // 🔥 LIBERAR LIMITE (ESSENCIAL)
-      await supabase
-        .from('transactions')
-        .update({ status: 'paid' })
-        .eq('card_id', card.id)
-        .eq('invoice_month', month + 1) // ⚠️ aqui é +1
-        .eq('invoice_year', year)
-        .eq('status', 'pending');
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['invoice_payments'] });
-      qc.invalidateQueries({ queryKey: ['card_transactions'] });
       toast.success('Fatura paga! Despesa registrada no mês do pagamento.');
       onClose();
     },
@@ -355,7 +339,7 @@ export default function Cards() {
               .filter((t: any) => {
                 if (t.card_id !== card.id) return false;
 
-                const isPending = !t.status || t.status === 'pending';
+                const isPending = t.status ? t.status === 'pending' : true;
 
                 return isPending;
               })

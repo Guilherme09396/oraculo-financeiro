@@ -178,11 +178,6 @@ export default function Dashboard() {
 
     const cardSpending = monthly
       .filter((t: any) => t.type === 'expense' && t.payment_method === 'credit_card')
-      .filter((t: any) => {
-        const monthToUse = t.real_month ?? new Date(t.date).getMonth() + 1;
-        const yearToUse = t.real_year ?? new Date(t.date).getFullYear();
-        return monthToUse === month + 1 && yearToUse === year;
-      })
       .reduce((s: number, t: any) => s + Number(t.amount), 0);
 
     const goalsProgress = goals.length > 0
