@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Bot, Send, Mic, MicOff, Zap, User } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
+import Tesseract from 'tesseract.js';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -25,6 +26,7 @@ export default function Assistant() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Envia mensagem para o backend / IA
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
 
@@ -40,7 +42,6 @@ export default function Assistant() {
       });
 
       if (error) throw error;
-
       if (data?.error) {
         toast.error(data.error);
         setIsLoading(false);
@@ -50,7 +51,7 @@ export default function Assistant() {
       const assistantMsg: Message = { role: 'assistant', content: data.message || 'Desculpe, não consegui processar sua mensagem.' };
       setMessages(prev => [...prev, assistantMsg]);
 
-      // If AI performed actions, refresh data
+      // Atualiza transações se IA executou ações
       if (data.actions?.length > 0) {
         qc.invalidateQueries({ queryKey: ['transactions'] });
         qc.invalidateQueries({ queryKey: ['future_transactions'] });
@@ -69,6 +70,7 @@ export default function Assistant() {
     }
   };
 
+  // Reconhecimento de voz
   const startVoice = () => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
@@ -89,9 +91,7 @@ export default function Assistant() {
     };
     recognition.onresult = (e: any) => {
       const transcript = e.results[0][0].transcript;
-      if (transcript) {
-        sendMessage(transcript);
-      }
+      if (transcript) sendMessage(transcript);
     };
 
     recognition.start();
@@ -104,6 +104,7 @@ export default function Assistant() {
     }
   };
 
+  // Sugestões iniciais
   const suggestions = [
     'Para onde está indo meu dinheiro?',
     'Como posso economizar este mês?',
@@ -111,6 +112,40 @@ export default function Assistant() {
     'Gastei R$ 25,00 com almoço hoje',
     'Resumo financeiro do mês',
   ];
+
+  // Função de OCR para processar fotos
+  const handleImageUpload = async (file: File) => {
+    if (!file) return;
+    setIsLoading(true);
+
+    try {
+      const { data: { text } } = await Tesseract.recognize(file, 'por', {
+        logger: m => console.log(m),
+      });
+
+      // Regex para valores e parcelas
+      const valorRegex = /R\$\s?([\d.,]+)/g;
+      const parcelaRegex = /(\d+)x\s+de\s+R\$\s?([\d.,]+)/gi;
+
+      const valores = Array.from(text.matchAll(valorRegex)).map(m => m[1]);
+      const parcelas = Array.from(text.matchAll(parcelaRegex)).map(m => ({
+        qtd: Number(m[1]),
+        valor: m[2],
+      }));
+
+      let msg = `Detectei os seguintes valores na imagem: ${valores.join(', ')}`;
+      if (parcelas.length > 0) {
+        msg += `. Parcelas detectadas: ${parcelas.map(p => `${p.qtd}x de R$ ${p.valor}`).join('; ')}`;
+      }
+
+      sendMessage(msg);
+    } catch (e) {
+      console.error('Erro OCR:', e);
+      toast.error('Não consegui processar a imagem.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
@@ -196,6 +231,19 @@ export default function Assistant() {
               title="Gravar áudio">
               {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
             </Button>
+
+            {/* Botão de envio de foto */}
+            <input
+              type="file"
+              accept="image/*"
+              onChange={e => e.target.files && handleImageUpload(e.target.files[0])}
+              className="hidden"
+              id="upload-photo"
+            />
+            <label htmlFor="upload-photo" className="px-3 py-2 rounded-lg bg-secondary cursor-pointer border border-border text-sm flex items-center justify-center">
+              📷 Foto
+            </label>
+
             <Input
               value={input}
               onChange={e => setInput(e.target.value)}
