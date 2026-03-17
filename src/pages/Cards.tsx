@@ -166,6 +166,10 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
         categoryId = cardCategoryAlt?.id || null;
       }
 
+      const invoiceDate = new Date(paidDate); // data real da compra
+      const realMonth = invoiceDate.getMonth() + 1; // 1-12
+      const realYear = invoiceDate.getFullYear();
+
       const { error } = await supabase.from('transactions').insert({
         user_id: user!.id,
         description: `Pagamento fatura ${card.name} - ${monthName}`,
@@ -176,6 +180,8 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
         category_id: categoryId,
         receipt_url: receiptUrl || null,
         notes: `Fatura do cartão ${card.name} referente a ${monthName}/${year}`,
+        real_month: realMonth,
+        real_year: realYear,
       });
       if (error) throw error;
 
@@ -191,6 +197,7 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['invoice_payments'] });
+      qc.invalidateQueries({ queryKey: ['card_transactions'] });
       toast.success('Fatura paga! Despesa registrada no mês do pagamento.');
       onClose();
     },
