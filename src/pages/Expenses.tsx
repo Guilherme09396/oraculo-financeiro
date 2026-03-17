@@ -23,7 +23,6 @@ import { toast } from 'sonner';
 function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: () => void }) {
   const { user } = useAuth();
   const isEditing = !!transaction;
-
   const [description, setDescription] = useState(transaction?.description || '');
   const [amount, setAmount] = useState(transaction ? String(transaction.amount) : '');
   const [categoryId, setCategoryId] = useState(transaction?.category_id || '');
@@ -32,16 +31,9 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
   const [cardId, setCardId] = useState((transaction as any)?.card_id || '');
   const [receiptUrl, setReceiptUrl] = useState((transaction as any)?.receipt_url || '');
   const [uploading, setUploading] = useState(false);
-
-  // 🔥 NOVO
-  const [isInstallment, setIsInstallment] = useState(false);
-  const [installments, setInstallments] = useState(1);
-
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
-
   const { data: categories = [] } = useCategories('expense');
-
   const { data: cards = [] } = useQuery({
     queryKey: ['credit_cards'],
     queryFn: async () => {
@@ -51,171 +43,75 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
     },
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleUpload = async (file: File) => {
+    if (!user) return;
+    setUploading(true);
+    const path = `${user.id}/${crypto.randomUUID()}.${file.name.split('.').pop()}`;
+    const { error } = await supabase.storage.from('receipts').upload(path, file);
+    if (error) { toast.error('Erro ao enviar'); setUploading(false); return; }
+    setReceiptUrl(supabase.storage.from('receipts').getPublicUrl(path).data.publicUrl);
+    setUploading(false);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    const totalAmount = parseFloat(amount);
-
-    // 🔥 PARCELAMENTO
-    if (paymentMethod === 'credit_card' && isInstallment && installments > 1) {
-
-      const installmentValue = totalAmount / installments;
-      const groupId = crypto.randomUUID();
-
-      const transactions = [];
-
-      for (let i = 0; i < installments; i++) {
-
-        const d = new Date(date);
-        d.setMonth(d.getMonth() + i);
-
-        transactions.push({
-          description: `${description} (${i + 1}/${installments})`,
-          amount: installmentValue,
-          type: 'expense',
-          category_id: categoryId || null,
-          date: d.toISOString().split('T')[0],
-          payment_method: 'credit_card',
-          card_id: cardId,
-
-          status: 'pending',
-          invoice_month: d.getMonth() + 1,
-          invoice_year: d.getFullYear(),
-          installment_number: i + 1,
-          installment_total: installments,
-          group_id: groupId,
-        });
-      }
-
-      await create.mutateAsync(transactions);
-
-    } else {
-
-      const d = new Date(date);
-
-      await create.mutateAsync({
-        description,
-        amount: totalAmount,
-        type: 'expense',
-        category_id: categoryId || null,
-        date,
-        payment_method: paymentMethod,
-        card_id: paymentMethod === 'credit_card' ? cardId : null,
-
-        status: paymentMethod === 'credit_card' ? 'pending' : 'paid',
-        invoice_month: d.getMonth() + 1,
-        invoice_year: d.getFullYear(),
-        receipt_url: receiptUrl || null,
-      });
-    }
-
-    onClose();
+    const data: any = {
+      description, amount: parseFloat(amount), type: 'expense', category_id: categoryId || null,
+      date, payment_method: paymentMethod || null, notes: null, receipt_url: receiptUrl || null,
+      card_id: (paymentMethod === 'credit_card' && cardId) ? cardId : null,
+    };
+    if (isEditing) update.mutate({ id: transaction.id, ...data }, { onSuccess: onClose });
+    else create.mutate(data, { onSuccess: onClose });
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-
-      <div className="space-y-2">
-        <Label>Descrição</Label>
-        <Input value={description} onChange={e => setDescription(e.target.value)} className="bg-secondary border-border" required />
-      </div>
-
+      <div className="space-y-2"><Label>Descrição</Label><Input value={description} onChange={e => setDescription(e.target.value)} className="bg-secondary border-border" required /></div>
       <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Valor</Label>
-          <Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="bg-secondary border-border" required />
-        </div>
-        <div className="space-y-2">
-          <Label>Data</Label>
-          <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-secondary border-border" required />
-        </div>
+        <div className="space-y-2"><Label>Valor</Label><Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="bg-secondary border-border" required /></div>
+        <div className="space-y-2"><Label>Data</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-secondary border-border" required /></div>
       </div>
-
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>Categoria</Label>
           <Select value={categoryId} onValueChange={setCategoryId}>
-            <SelectTrigger className="bg-secondary border-border">
-              <SelectValue placeholder="Selecione" />
-            </SelectTrigger>
-            <SelectContent>
-              {categories.map(c => (
-                <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>
-              ))}
-            </SelectContent>
+            <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione" /></SelectTrigger>
+            <SelectContent>{categories.map(c => <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>)}</SelectContent>
           </Select>
         </div>
-
         <div className="space-y-2">
           <Label>Pagamento</Label>
-          <Select value={paymentMethod} onValueChange={(v) => {
-            setPaymentMethod(v);
-            if (v !== 'credit_card') setCardId('');
-          }}>
-            <SelectTrigger className="bg-secondary border-border">
-              <SelectValue placeholder="Selecione" />
-            </SelectTrigger>
+          <Select value={paymentMethod} onValueChange={(v) => { setPaymentMethod(v); if (v !== 'credit_card') setCardId(''); }}>
+            <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="pix">PIX</SelectItem>
-              <SelectItem value="credit_card">Cartão de Crédito</SelectItem>
-              <SelectItem value="debit_card">Cartão de Débito</SelectItem>
-              <SelectItem value="cash">Dinheiro</SelectItem>
+              <SelectItem value="pix">PIX</SelectItem><SelectItem value="credit_card">Cartão de Crédito</SelectItem>
+              <SelectItem value="debit_card">Cartão de Débito</SelectItem><SelectItem value="cash">Dinheiro</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
-
-      {/* 🔥 CARTÃO */}
-      {paymentMethod === 'credit_card' && cards.length > 0 && (
+      {paymentMethod === 'credit_card' && cards && cards.length > 0 && (
         <div className="space-y-2">
           <Label>Qual cartão?</Label>
           <Select value={cardId} onValueChange={setCardId}>
-            <SelectTrigger className="bg-secondary border-border">
-              <SelectValue placeholder="Selecione o cartão" />
-            </SelectTrigger>
+            <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione o cartão" /></SelectTrigger>
             <SelectContent>
-              {cards.map((c: any) => (
-                <SelectItem key={c.id} value={c.id}>💳 {c.name}</SelectItem>
-              ))}
+              {cards.map((c: any) => <SelectItem key={c.id} value={c.id}>💳 {c.name}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
       )}
-
-      {/* 🔥 PARCELAMENTO */}
-      {paymentMethod === 'credit_card' && (
-        <>
-          <div className="space-y-2">
-            <Label>Parcelado?</Label>
-            <Select value={isInstallment ? "yes" : "no"} onValueChange={(v) => setIsInstallment(v === "yes")}>
-              <SelectTrigger className="bg-secondary border-border">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="no">À vista</SelectItem>
-                <SelectItem value="yes">Parcelado</SelectItem>
-              </SelectContent>
-            </Select>
+      <div className="space-y-2">
+        <Label>Comprovante</Label>
+        {receiptUrl ? (
+          <div className="flex items-center gap-2">
+            <span className="text-primary text-sm">✅ Comprovante anexado</span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setReceiptUrl('')}>Remover</Button>
           </div>
-
-          {isInstallment && (
-            <div className="space-y-2">
-              <Label>Quantidade de parcelas</Label>
-              <Input
-                type="number"
-                min="2"
-                max="24"
-                value={installments}
-                onChange={(e) => setInstallments(Number(e.target.value))}
-                className="bg-secondary border-border"
-              />
-            </div>
-          )}
-        </>
-      )}
-
-      <Button type="submit" className="w-full gradient-primary">
-        {isEditing ? 'Atualizar' : 'Adicionar'}
+        ) : <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />}
+      </div>
+      <Button type="submit" className="w-full gradient-primary" disabled={create.isPending || update.isPending}>
+        {(create.isPending || update.isPending) ? 'Salvando...' : isEditing ? 'Atualizar' : 'Adicionar'}
       </Button>
     </form>
   );
