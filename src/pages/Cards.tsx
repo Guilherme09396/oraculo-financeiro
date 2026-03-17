@@ -178,6 +178,15 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
         notes: `Fatura do cartão ${card.name} referente a ${monthName}/${year}`,
       });
       if (error) throw error;
+
+      // 🔥 LIBERAR LIMITE (ESSENCIAL)
+      await supabase
+        .from('transactions')
+        .update({ status: 'paid' })
+        .eq('card_id', card.id)
+        .eq('invoice_month', month + 1) // ⚠️ aqui é +1
+        .eq('invoice_year', year)
+        .eq('status', 'pending');
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] });
