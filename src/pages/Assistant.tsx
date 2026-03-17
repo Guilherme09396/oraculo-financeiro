@@ -14,6 +14,13 @@ interface Message {
   content: string;
 }
 
+interface ParsedTransaction {
+  valor: string;
+  parcelas?: { qtd: number; valor: string }[];
+  metodo?: 'Pix' | 'Cartão' | 'Dinheiro' | 'Outro';
+  categoria?: 'Alimentação' | 'Mercado' | 'Shopping' | 'Transporte' | 'Outro';
+}
+
 export default function Assistant() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -26,7 +33,6 @@ export default function Assistant() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Envia mensagem para o backend / IA
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return;
 
@@ -51,14 +57,11 @@ export default function Assistant() {
       const assistantMsg: Message = { role: 'assistant', content: data.message || 'Desculpe, não consegui processar sua mensagem.' };
       setMessages(prev => [...prev, assistantMsg]);
 
-      // Atualiza transações se IA executou ações
       if (data.actions?.length > 0) {
         qc.invalidateQueries({ queryKey: ['transactions'] });
         qc.invalidateQueries({ queryKey: ['future_transactions'] });
         const addedCount = data.actions.filter((a: any) => a.type === 'transaction_added').length;
-        if (addedCount > 0) {
-          toast.success(`${addedCount} transação(ões) registrada(s)!`);
-        }
+        if (addedCount > 0) toast.success(`${addedCount} transação(ões) registrada(s)!`);
       }
     } catch (e: any) {
       console.error('AI error:', e);
@@ -70,7 +73,6 @@ export default function Assistant() {
     }
   };
 
-  // Reconhecimento de voz
   const startVoice = () => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
@@ -104,7 +106,6 @@ export default function Assistant() {
     }
   };
 
-  // Sugestões iniciais
   const suggestions = [
     'Para onde está indo meu dinheiro?',
     'Como posso economizar este mês?',
@@ -113,7 +114,39 @@ export default function Assistant() {
     'Resumo financeiro do mês',
   ];
 
-  // Função de OCR para processar fotos
+  // Função de classificação inteligente
+  const classifyTransaction = (text: string): ParsedTransaction => {
+    const valorRegex = /R\$\s?([\d.,]+)/g;
+    const parcelaRegex = /(\d+)x\s+de\s+R\$\s?([\d.,]+)/gi;
+
+    const valores = Array.from(text.matchAll(valorRegex)).map(m => m[1]);
+    const parcelas = Array.from(text.matchAll(parcelaRegex)).map(m => ({
+      qtd: Number(m[1]),
+      valor: m[2],
+    }));
+
+    let metodo: ParsedTransaction['metodo'] = undefined;
+    if (/PIX|transferência|TED/i.test(text)) metodo = 'Pix';
+    else if (/Cartão|Visa|Mastercard|crédito|débito/i.test(text)) metodo = 'Cartão';
+    else if (/Dinheiro|cash/i.test(text)) metodo = 'Dinheiro';
+    else metodo = 'Outro';
+
+    let categoria: ParsedTransaction['categoria'] = undefined;
+    if (/restaurante|lanchonete|padaria|bar/i.test(text)) categoria = 'Alimentação';
+    else if (/mercado|supermercado|hipermercado/i.test(text)) categoria = 'Mercado';
+    else if (/shopping|loja|boutique|outlet/i.test(text)) categoria = 'Shopping';
+    else if (/uber|99|taxi|transporte/i.test(text)) categoria = 'Transporte';
+    else categoria = 'Outro';
+
+    return {
+      valor: valores[0] || '0',
+      parcelas: parcelas.length ? parcelas : undefined,
+      metodo,
+      categoria,
+    };
+  };
+
+  // Upload de foto + OCR
   const handleImageUpload = async (file: File) => {
     if (!file) return;
     setIsLoading(true);
@@ -123,20 +156,13 @@ export default function Assistant() {
         logger: m => console.log(m),
       });
 
-      // Regex para valores e parcelas
-      const valorRegex = /R\$\s?([\d.,]+)/g;
-      const parcelaRegex = /(\d+)x\s+de\s+R\$\s?([\d.,]+)/gi;
+      const parsed = classifyTransaction(text);
 
-      const valores = Array.from(text.matchAll(valorRegex)).map(m => m[1]);
-      const parcelas = Array.from(text.matchAll(parcelaRegex)).map(m => ({
-        qtd: Number(m[1]),
-        valor: m[2],
-      }));
-
-      let msg = `Detectei os seguintes valores na imagem: ${valores.join(', ')}`;
-      if (parcelas.length > 0) {
-        msg += `. Parcelas detectadas: ${parcelas.map(p => `${p.qtd}x de R$ ${p.valor}`).join('; ')}`;
+      let msg = `Detectei: R$ ${parsed.valor}`;
+      if (parsed.parcelas) {
+        msg += `. Parcelas: ${parsed.parcelas.map(p => `${p.qtd}x de R$ ${p.valor}`).join('; ')}`;
       }
+      msg += `. Método: ${parsed.metodo}. Categoria: ${parsed.categoria}.`;
 
       sendMessage(msg);
     } catch (e) {
@@ -224,7 +250,7 @@ export default function Assistant() {
 
         {/* Input */}
         <div className="border-t border-border p-4">
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             <Button type="button" variant="outline" size="icon"
               onClick={startVoice} disabled={isRecording}
               className={`shrink-0 ${isRecording ? 'bg-expense/20 border-expense text-expense' : ''}`}
@@ -232,28 +258,14 @@ export default function Assistant() {
               {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
             </Button>
 
-            {/* Botão de envio de foto */}
-            <input
-              type="file"
-              accept="image/*"
-              onChange={e => e.target.files && handleImageUpload(e.target.files[0])}
-              className="hidden"
-              id="upload-photo"
-            />
-            <label htmlFor="upload-photo" className="px-3 py-2 rounded-lg bg-secondary cursor-pointer border border-border text-sm flex items-center justify-center">
-              📷 Foto
+            {/* Botão de foto com emoji 📷 */}
+            <input type="file" accept="image/*" onChange={e => e.target.files && handleImageUpload(e.target.files[0])} className="hidden" id="upload-photo" />
+            <label htmlFor="upload-photo" className="cursor-pointer px-3 py-2 rounded-lg bg-secondary border border-border text-lg flex items-center justify-center">
+              📷
             </label>
 
-            <Input
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={isRecording ? 'Ouvindo...' : 'Digite sua mensagem...'}
-              className="bg-secondary border-border"
-              disabled={isLoading || isRecording}
-            />
-            <Button onClick={() => sendMessage(input)} disabled={!input.trim() || isLoading}
-              className="gradient-primary shrink-0" size="icon">
+            <Input value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder={isRecording ? 'Ouvindo...' : 'Digite sua mensagem...'} className="bg-secondary border-border" disabled={isLoading || isRecording} />
+            <Button onClick={() => sendMessage(input)} disabled={!input.trim() || isLoading} className="gradient-primary shrink-0" size="icon">
               <Send className="w-4 h-4" />
             </Button>
           </div>
