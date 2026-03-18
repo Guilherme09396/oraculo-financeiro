@@ -120,50 +120,55 @@ export default function Assistant() {
   ];
 
   // 🔥 CLASSIFICAÇÃO MUITO MAIS INTELIGENTE
-  const classifyTransaction = (text: string): ParsedTransaction => {
-    const clean = text.toLowerCase();
+  const classifyTransaction = (text: string): ParsedTransaction[] => {
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
-    // pega todos valores e tenta escolher o mais relevante
-    const valores = Array.from(text.matchAll(/r\$\s?([\d.,]+)/gi)).map(m => m[1]);
-    const valor = valores.length ? valores.sort((a, b) => parseFloat(b.replace(',', '.')) - parseFloat(a.replace(',', '.')))[0] : '0';
+    const transacoes: ParsedTransaction[] = [];
 
-    const parcelaRegex = /(\d+)x\s+de\s+r\$\s?([\d.,]+)/gi;
-    const parcelas = Array.from(text.matchAll(parcelaRegex)).map(m => ({
-      qtd: Number(m[1]),
-      valor: m[2],
-    }));
-
-    // 🔥 detectar estabelecimento (linha mais relevante)
-    let estabelecimento = '';
-    const lines = text.split('\n');
     for (const line of lines) {
-      if (/uber|ifood|mercado|supermercado|loja|bar|restaurante|farmacia|amazon|magalu|shop/i.test(line)) {
-        estabelecimento = line.trim();
-        break;
-      }
+      const clean = line.toLowerCase();
+
+      // ❌ ignorar linhas que não são gastos reais
+      if (/limite|dispon[ií]vel|saldo|fatura|empr[eé]stimo/i.test(clean)) continue;
+
+      const valorMatch = line.match(/r\$\s?([\d.,]+)/i);
+      if (!valorMatch) continue;
+
+      const valor = valorMatch[1];
+
+      // detectar parcelas
+      const parcelaMatch = line.match(/(\d+)x/i);
+      const parcelas = parcelaMatch
+        ? [{ qtd: Number(parcelaMatch[1]), valor }]
+        : undefined;
+
+      // detectar estabelecimento
+      const estabelecimento = line.replace(/r\$\s?[\d.,]+.*$/i, '').trim();
+
+      // método (melhorado)
+      let metodo: ParsedTransaction['metodo'] = 'Cartão'; // default para prints assim
+
+      if (/pix|ted|transfer/i.test(clean)) metodo = 'Pix';
+      else if (/debito/i.test(clean)) metodo = 'Cartão';
+
+      // categoria inteligente
+      let categoria: ParsedTransaction['categoria'] = 'Outro';
+
+      if (/uber|99|trip/i.test(clean)) categoria = 'Transporte';
+      else if (/drink|bar|lanchonete|restaurante/i.test(clean)) categoria = 'Alimentação';
+      else if (/mercado|supermercado|sao luiz/i.test(clean)) categoria = 'Mercado';
+      else if (/shop|loja/i.test(clean)) categoria = 'Shopping';
+
+      transacoes.push({
+        valor,
+        parcelas,
+        metodo,
+        categoria,
+        estabelecimento,
+      });
     }
 
-    // método inteligente
-    let metodo: ParsedTransaction['metodo'] = 'Outro';
-    if (/pix|transferência|ted/i.test(clean)) metodo = 'Pix';
-    else if (/credito|débito|visa|master|elo/i.test(clean)) metodo = 'Cartão';
-    else if (/dinheiro|saldo/i.test(clean)) metodo = 'Dinheiro';
-
-    // categoria MUITO mais inteligente
-    let categoria: ParsedTransaction['categoria'] = 'Outro';
-
-    if (/uber|99|trip|taxi/i.test(clean)) categoria = 'Transporte';
-    else if (/ifood|restaurante|lanchonete|bar|pizza|burger|drink/i.test(clean)) categoria = 'Alimentação';
-    else if (/mercado|supermercado|hiper|bom frango/i.test(clean)) categoria = 'Mercado';
-    else if (/shop|store|amazon|magalu|loja/i.test(clean)) categoria = 'Shopping';
-
-    return {
-      valor,
-      parcelas: parcelas.length ? parcelas : undefined,
-      metodo,
-      categoria,
-      estabelecimento,
-    };
+    return transacoes;
   };
 
   // 🔥 OCR + inteligência melhorada (sem quebrar fluxo)
@@ -176,9 +181,22 @@ export default function Assistant() {
         logger: m => console.log(m),
       });
 
-      const parsed = classifyTransaction(text);
+      const transacoes = classifyTransaction(text);
 
-      let msg = `Detectei: R$ ${parsed.valor}`;
+      if (!transacoes.length) {
+        toast.error('Não consegui identificar transações.');
+        setIsLoading(false);
+        return;
+      }
+
+      let msg = `Detectei ${transacoes.length} transação(ões):\n\n`;
+
+      transacoes.forEach((t, i) => {
+        msg += `#${i + 1} 💰 R$ ${t.valor}`;
+        if (t.estabelecimento) msg += `\n🏪 ${t.estabelecimento}`;
+        if (t.parcelas) msg += `\n💳 ${t.parcelas[0].qtd}x`;
+        msg += `\n📂 ${t.categoria} | 💸 ${t.metodo}\n\n`;
+      });
 
       if (parsed.estabelecimento) {
         msg += `\nLocal: ${parsed.estabelecimento}`;
