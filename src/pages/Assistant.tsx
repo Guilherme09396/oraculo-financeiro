@@ -81,25 +81,47 @@ export default function Assistant() {
 
   const saveTransactions = async (transacoes: ParsedTransaction[]) => {
     try {
-      const formatted = transacoes.map(t => ({
-        amount: Number(t.valor.replace(/\./g, '').replace(',', '.')),
-        description: t.estabelecimento || 'Despesa OCR',
-        category: t.categoria || 'Outro',
-        payment_method: t.metodo || 'Outro',
-        type: 'expense',
-        date: new Date().toISOString(),
-      }));
+      const formatted = transacoes
+        .map(t => {
+          const parsedAmount = Number(
+            t.valor.replace(/\./g, '').replace(',', '.')
+          );
+
+          // 🚨 validação forte
+          if (!parsedAmount || isNaN(parsedAmount)) {
+            console.warn('Valor inválido ignorado:', t.valor);
+            return null;
+          }
+
+          return {
+            amount: parsedAmount,
+            description: t.estabelecimento || 'Despesa OCR',
+            category: t.categoria || 'Outro',
+            payment_method: t.metodo || 'Outro',
+            type: 'expense',
+            date: new Date().toISOString(),
+          };
+        })
+        .filter(Boolean); // remove inválidos
+
+      if (!formatted.length) {
+        toast.error('Nenhuma transação válida encontrada.');
+        return;
+      }
 
       const { error } = await supabase.from('transactions').insert(formatted);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Erro Supabase:', error);
+        throw error;
+      }
 
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['future_transactions'] });
 
       toast.success(`${formatted.length} transação(ões) salva(s)!`);
     } catch (e) {
-      console.error(e);
+      console.error('Erro ao salvar:', e);
       toast.error('Erro ao salvar transações');
     }
   };
