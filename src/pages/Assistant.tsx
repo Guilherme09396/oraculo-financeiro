@@ -54,17 +54,12 @@ export default function Assistant() {
         return;
       }
 
-      const assistantMsg: Message = {
-        role: 'assistant',
-        content: data.message || 'Desculpe, não consegui processar sua mensagem.'
-      };
-
+      const assistantMsg: Message = { role: 'assistant', content: data.message || 'Desculpe, não consegui processar sua mensagem.' };
       setMessages(prev => [...prev, assistantMsg]);
 
       if (data.actions?.length > 0) {
         qc.invalidateQueries({ queryKey: ['transactions'] });
         qc.invalidateQueries({ queryKey: ['future_transactions'] });
-
         const addedCount = data.actions.filter((a: any) => a.type === 'transaction_added').length;
         if (addedCount > 0) toast.success(`${addedCount} transação(ões) registrada(s)!`);
       }
@@ -75,95 +70,6 @@ export default function Assistant() {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Desculpe, ocorreu um erro. Tente novamente.' }]);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // ===============================
-  // 🔥 CLASSIFICAÇÃO MULTI TRANSAÇÕES
-  // ===============================
-  const classifyTransaction = (text: string): ParsedTransaction[] => {
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const transacoes: ParsedTransaction[] = [];
-
-    for (const line of lines) {
-      const clean = line.toLowerCase();
-
-      if (/limite|saldo|dispon[ií]vel|fatura|empr[eé]stimo/i.test(clean)) continue;
-
-      const valorMatch = line.match(/r\$\s?([\d.,]+)/i);
-      if (!valorMatch) continue;
-
-      const valor = valorMatch[1];
-
-      const parcelaMatch = line.match(/(\d+)x/i);
-      const parcelas = parcelaMatch
-        ? [{ qtd: Number(parcelaMatch[1]), valor }]
-        : undefined;
-
-      let metodo: ParsedTransaction['metodo'] = 'Cartão';
-      if (/pix|ted|transfer/i.test(clean)) metodo = 'Pix';
-      else if (/dinheiro|cash/i.test(clean)) metodo = 'Dinheiro';
-
-      let categoria: ParsedTransaction['categoria'] = 'Outro';
-      if (/uber|99/i.test(clean)) categoria = 'Transporte';
-      else if (/restaurante|lanchonete|bar/i.test(clean)) categoria = 'Alimentação';
-      else if (/mercado|supermercado/i.test(clean)) categoria = 'Mercado';
-      else if (/shop|loja/i.test(clean)) categoria = 'Shopping';
-
-      transacoes.push({
-        valor,
-        parcelas,
-        metodo,
-        categoria,
-      });
-    }
-
-    return transacoes;
-  };
-
-  // ===============================
-  // 🔥 SALVAR COM VALIDAÇÃO (SEM ERRO 400)
-  // ===============================
-  const saveTransactions = async (transacoes: ParsedTransaction[]) => {
-    try {
-      const formatted = transacoes
-        .map(t => {
-          const parsedAmount = Number(
-            t.valor.replace(/\./g, '').replace(',', '.')
-          );
-
-          if (!parsedAmount || isNaN(parsedAmount)) return null;
-
-          return {
-            amount: parsedAmount,
-            description: 'Despesa OCR',
-            category: t.categoria || 'Outro',
-            payment_method: t.metodo || 'Outro',
-            type: 'expense',
-            date: new Date().toISOString(),
-          };
-        })
-        .filter(Boolean);
-
-      if (!formatted.length) {
-        toast.error('Nenhuma transação válida encontrada.');
-        return;
-      }
-
-      const { error } = await supabase.from('transactions').insert(formatted);
-
-      if (error) {
-        console.error(error);
-        throw error;
-      }
-
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['future_transactions'] });
-
-      toast.success(`${formatted.length} transação(ões) salva(s)!`);
-    } catch (e) {
-      console.error(e);
-      toast.error('Erro ao salvar transações');
     }
   };
 
@@ -208,35 +114,57 @@ export default function Assistant() {
     'Resumo financeiro do mês',
   ];
 
-  // ===============================
-  // 🔥 OCR + SALVAR + IA
-  // ===============================
+  // Função de classificação inteligente
+  const classifyTransaction = (text: string): ParsedTransaction => {
+    const valorRegex = /R\$\s?([\d.,]+)/g;
+    const parcelaRegex = /(\d+)x\s+de\s+R\$\s?([\d.,]+)/gi;
+
+    const valores = Array.from(text.matchAll(valorRegex)).map(m => m[1]);
+    const parcelas = Array.from(text.matchAll(parcelaRegex)).map(m => ({
+      qtd: Number(m[1]),
+      valor: m[2],
+    }));
+
+    let metodo: ParsedTransaction['metodo'] = undefined;
+    if (/PIX|transferência|TED/i.test(text)) metodo = 'Pix';
+    else if (/Cartão|Visa|Mastercard|crédito|débito/i.test(text)) metodo = 'Cartão';
+    else if (/Dinheiro|cash/i.test(text)) metodo = 'Dinheiro';
+    else metodo = 'Outro';
+
+    let categoria: ParsedTransaction['categoria'] = undefined;
+    if (/restaurante|lanchonete|padaria|bar/i.test(text)) categoria = 'Alimentação';
+    else if (/mercado|supermercado|hipermercado/i.test(text)) categoria = 'Mercado';
+    else if (/shopping|loja|boutique|outlet/i.test(text)) categoria = 'Shopping';
+    else if (/uber|99|taxi|transporte/i.test(text)) categoria = 'Transporte';
+    else categoria = 'Outro';
+
+    return {
+      valor: valores[0] || '0',
+      parcelas: parcelas.length ? parcelas : undefined,
+      metodo,
+      categoria,
+    };
+  };
+
+  // Upload de foto + OCR
   const handleImageUpload = async (file: File) => {
     if (!file) return;
     setIsLoading(true);
 
     try {
-      const { data: { text } } = await Tesseract.recognize(file, 'por+eng');
-
-      const transacoes = classifyTransaction(text);
-
-      if (!transacoes.length) {
-        toast.error('Não consegui identificar transações.');
-        return;
-      }
-
-      await saveTransactions(transacoes);
-
-      let msg = `Detectei ${transacoes.length} transação(ões):\n\n`;
-
-      transacoes.forEach((t, i) => {
-        msg += `#${i + 1} 💰 R$ ${t.valor}`;
-        if (t.parcelas) msg += `\n💳 ${t.parcelas[0].qtd}x`;
-        msg += `\n📂 ${t.categoria} | 💸 ${t.metodo}\n\n`;
+      const { data: { text } } = await Tesseract.recognize(file, 'por', {
+        logger: m => console.log(m),
       });
 
-      sendMessage(msg);
+      const parsed = classifyTransaction(text);
 
+      let msg = `Detectei: R$ ${parsed.valor}`;
+      if (parsed.parcelas) {
+        msg += `. Parcelas: ${parsed.parcelas.map(p => `${p.qtd}x de R$ ${p.valor}`).join('; ')}`;
+      }
+      msg += `. Método: ${parsed.metodo}. Categoria: ${parsed.categoria}.`;
+
+      sendMessage(msg);
     } catch (e) {
       console.error('Erro OCR:', e);
       toast.error('Não consegui processar a imagem.');
@@ -252,6 +180,7 @@ export default function Assistant() {
         <p className="text-muted-foreground">Seu conselheiro financeiro inteligente</p>
       </div>
 
+      {/* Messages */}
       <Card className="flex-1 bg-card border-border overflow-hidden flex flex-col">
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 && (
@@ -263,7 +192,6 @@ export default function Assistant() {
               <p className="text-muted-foreground text-sm max-w-md mb-6">
                 Posso analisar seus gastos, dar conselhos e até registrar despesas por você. Tente perguntar algo!
               </p>
-
               <div className="flex flex-wrap gap-2 justify-center max-w-lg">
                 {suggestions.map((s, i) => (
                   <button key={i} onClick={() => sendMessage(s)}
@@ -282,21 +210,19 @@ export default function Assistant() {
                   <Bot className="w-4 h-4 text-primary-foreground" />
                 </div>
               )}
-
               <div className={`max-w-[75%] rounded-2xl px-4 py-3 ${
                 msg.role === 'user'
                   ? 'bg-primary text-primary-foreground rounded-br-md'
                   : 'bg-secondary text-foreground rounded-bl-md'
               }`}>
                 {msg.role === 'assistant' ? (
-                  <div className="prose prose-sm prose-invert max-w-none">
+                  <div className="prose prose-sm prose-invert max-w-none [&>p]:mb-2 [&>ul]:mb-2 [&>ol]:mb-2 [&>h1]:text-lg [&>h2]:text-base [&>h3]:text-sm">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
                 ) : (
                   <p className="text-sm">{msg.content}</p>
                 )}
               </div>
-
               {msg.role === 'user' && (
                 <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0 mt-1">
                   <User className="w-4 h-4 text-muted-foreground" />
@@ -305,26 +231,44 @@ export default function Assistant() {
             </div>
           ))}
 
-          {isLoading && <p>Processando...</p>}
+          {isLoading && (
+            <div className="flex gap-3">
+              <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center shrink-0">
+                <Bot className="w-4 h-4 text-primary-foreground" />
+              </div>
+              <div className="bg-secondary rounded-2xl rounded-bl-md px-4 py-3">
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Input */}
         <div className="border-t border-border p-4">
           <div className="flex gap-2 items-center">
-            <Button onClick={startVoice} size="icon">
-              {isRecording ? <MicOff /> : <Mic />}
+            <Button type="button" variant="outline" size="icon"
+              onClick={startVoice} disabled={isRecording}
+              className={`shrink-0 ${isRecording ? 'bg-expense/20 border-expense text-expense' : ''}`}
+              title="Gravar áudio">
+              {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
             </Button>
 
+            {/* Botão de foto com emoji 📷 */}
             <input type="file" accept="image/*" onChange={e => e.target.files && handleImageUpload(e.target.files[0])} className="hidden" id="upload-photo" />
-            <label htmlFor="upload-photo">📷</label>
+            <label htmlFor="upload-photo" className="cursor-pointer px-3 py-2 rounded-lg bg-secondary border border-border text-lg flex items-center justify-center">
+              📷
+            </label>
 
-            <Input value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} />
-
-            <Button onClick={() => sendMessage(input)}>
-              <Send />
+            <Input value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder={isRecording ? 'Ouvindo...' : 'Digite sua mensagem...'} className="bg-secondary border-border" disabled={isLoading || isRecording} />
+            <Button onClick={() => sendMessage(input)} disabled={!input.trim() || isLoading} className="gradient-primary shrink-0" size="icon">
+              <Send className="w-4 h-4" />
             </Button>
           </div>
-
           <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground mt-2">
             <Zap className="w-3 h-3" /> Powered by Lovable AI
           </div>
