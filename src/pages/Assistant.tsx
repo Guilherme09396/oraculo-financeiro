@@ -198,17 +198,8 @@ export default function Assistant() {
         msg += `\n📂 ${t.categoria} | 💸 ${t.metodo}\n\n`;
       });
 
-      if (parsed.estabelecimento) {
-        msg += `\nLocal: ${parsed.estabelecimento}`;
-      }
-
-      if (parsed.parcelas) {
-        msg += `. Parcelas: ${parsed.parcelas.map(p => `${p.qtd}x de R$ ${p.valor}`).join('; ')}`;
-      }
-
-      msg += `. Método: ${parsed.metodo}. Categoria: ${parsed.categoria}.`;
-
       sendMessage(msg);
+
     } catch (e) {
       console.error('Erro OCR:', e);
       toast.error('Não consegui processar a imagem.');
