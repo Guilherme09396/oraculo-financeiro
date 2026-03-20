@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
+import { useCreateTransaction } from '@/hooks/useTransactions';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,26 +17,27 @@ import {
 import { Plus, Trash2, CreditCard, Pencil, TrendingDown, ChevronDown, ChevronUp, FileText, Wallet, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-/**
- * Given a transaction date and card closing day, returns which invoice month/year
- * that transaction belongs to.
- * Rule:
- *   - purchaseDay <= closingDay → belongs to CURRENT month's invoice
- *   - purchaseDay > closingDay  → belongs to NEXT month's invoice
- */
-function getInvoiceMonthForDate(dateStr: string, closingDay: number): { invoiceMonth: number; invoiceYear: number } {
-  const date = new Date(dateStr + 'T12:00:00');
-  const day = date.getDate();
-  let invoiceMonth = date.getMonth(); // 0-indexed
-  let invoiceYear = date.getFullYear();
+function getInvoicePeriod(month: number, year: number, closingDay: number) {
+  const periodStart = new Date(year, month - 1, closingDay + 1);
+  const periodEnd = new Date(year, month, closingDay);
 
-  if (day > closingDay) {
-    invoiceMonth += 1;
-    if (invoiceMonth > 11) { invoiceMonth = 0; invoiceYear += 1; }
+  if (periodStart > periodEnd) {
+    periodStart.setMonth(periodStart.getMonth() - 1);
   }
 
-  return { invoiceMonth, invoiceYear };
+  const formatDateISO = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  return {
+    start: formatDateISO(periodStart),
+    end: formatDateISO(periodEnd)
+  };
 }
+
 
 const CARD_COLORS = ['#6366f1', '#22c55e', '#ef4444', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
 
@@ -82,11 +84,7 @@ function CardDialog({ card, onClose }: { card?: any; onClose: () => void }) {
         if (error) throw error;
       }
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['credit_cards'] });
-      toast.success(isEditing ? 'Cartão atualizado!' : 'Cartão adicionado!');
-      onClose();
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['credit_cards'] }); toast.success(isEditing ? 'Cartão atualizado!' : 'Cartão adicionado!'); onClose(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -119,14 +117,14 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
   card: any;
   spent: number;
   alreadyPaid: number;
-  month: number; // 0-indexed
+  month: number;
   year: number;
-  onClose: () => void;
+  onClose: () => void
 }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const remaining = spent - alreadyPaid;
-  const [amount, setAmount] = useState(String(remaining.toFixed(2)));
+  const [amount, setAmount] = useState(String(remaining));
   const [paidDate, setPaidDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [receiptUrl, setReceiptUrl] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -146,18 +144,31 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
   const mut = useMutation({
     mutationFn: async () => {
       const paymentAmount = parseFloat(amount);
+
       if (paymentAmount > remaining) {
         throw new Error(`O valor não pode ser maior que o restante da fatura (${formatCurrency(remaining)})`);
       }
-      const { data: cardCategory } = await supabase.from('categories').select('id').ilike('name', 'cartão').maybeSingle();
+
+      const { data: cardCategory } = await supabase
+        .from('categories')
+        .select('id')
+        .ilike('name', 'cartão')
+        .maybeSingle();
+
       let categoryId = cardCategory?.id || null;
+
       if (!categoryId) {
-        const { data: alt } = await supabase.from('categories').select('id').ilike('name', 'cartao').maybeSingle();
-        categoryId = alt?.id || null;
+        const { data: cardCategoryAlt } = await supabase
+          .from('categories')
+          .select('id')
+          .ilike('name', 'cartao')
+          .maybeSingle();
+        categoryId = cardCategoryAlt?.id || null;
       }
+
       const { error } = await supabase.from('transactions').insert({
         user_id: user!.id,
-        description: `Pagamento fatura ${card.name} - ${monthName}/${year}`,
+        description: `Pagamento fatura ${card.name} - ${monthName}`,
         amount: paymentAmount,
         type: 'expense',
         date: paidDate,
@@ -179,14 +190,34 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Cartão: <strong className="text-foreground">{card.name}</strong></p>
-      <p className="text-sm text-muted-foreground">Fatura de: <strong className="text-foreground">{monthName}/{year}</strong></p>
-      <p className="text-sm text-muted-foreground">Valor total: <strong className="text-expense">{formatCurrency(spent)}</strong></p>
-      {alreadyPaid > 0 && <p className="text-sm text-muted-foreground">Já pago: <strong className="text-income">{formatCurrency(alreadyPaid)}</strong></p>}
-      <p className="text-sm text-muted-foreground">Restante: <strong className="text-expense">{formatCurrency(remaining)}</strong></p>
+      <p className="text-sm text-muted-foreground">
+        Cartão: <strong className="text-foreground">{card.name}</strong>
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Fatura de: <strong className="text-foreground">{monthName}/{year}</strong>
+      </p>
+      <p className="text-sm text-muted-foreground">
+        Valor total: <strong className="text-expense">{formatCurrency(spent)}</strong>
+      </p>
+      {alreadyPaid > 0 && (
+        <p className="text-sm text-muted-foreground">
+          Já pago: <strong className="text-income">{formatCurrency(alreadyPaid)}</strong>
+        </p>
+      )}
+      <p className="text-sm text-muted-foreground">
+        Restante: <strong className="text-expense">{formatCurrency(remaining)}</strong>
+      </p>
       <div className="space-y-2">
         <Label>Valor a pagar (máximo: {formatCurrency(remaining)})</Label>
-        <Input type="number" step="0.01" max={remaining} value={amount} onChange={e => setAmount(e.target.value)} className="bg-secondary border-border" required />
+        <Input
+          type="number"
+          step="0.01"
+          max={remaining}
+          value={amount}
+          onChange={e => setAmount(e.target.value)}
+          className="bg-secondary border-border"
+          required
+        />
       </div>
       <div className="space-y-2">
         <Label>Data do pagamento</Label>
@@ -202,7 +233,7 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
         ) : <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />}
       </div>
       <p className="text-xs text-muted-foreground">
-        💡 Uma despesa será criada com categoria "Cartão" e método PIX na data informada.
+        💡 Uma despesa será criada com categoria "Cartão" e método PIX na data informada, impactando o saldo do mês correspondente.
       </p>
       <Button onClick={() => mut.mutate()} className="w-full gradient-primary" disabled={mut.isPending}>
         {mut.isPending ? 'Registrando...' : 'Pagar Fatura'}
@@ -213,7 +244,7 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
 
 export default function Cards() {
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth()); // 0-indexed
+  const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -224,22 +255,21 @@ export default function Cards() {
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
   const [payingInvoice, setPayingInvoice] = useState<{ card: any; spent: number; alreadyPaid: number } | null>(null);
 
-  // All card transactions ever (no date filter) — date = real purchase date
-  const { data: allCardTransactions = [] } = useQuery({
-    queryKey: ['card_transactions'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('transactions')
-        .select('*, categories(name, icon, color)')
-        .not('card_id', 'is', null)
-        .eq('type', 'expense')
-        .order('date', { ascending: false });
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!user,
-  });
 
-  // All invoice payments ever made
+  const { data: allCardTransactions = [] } = useQuery({
+  queryKey: ['card_transactions'],
+  queryFn: async () => {
+    const { data, error } = await supabase.from('transactions')
+      .select('*, categories(name, icon, color)')
+      .not('card_id', 'is', null)
+      .order('date', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+  enabled: !!user,
+});
+
+
   const { data: allPayments = [] } = useQuery({
     queryKey: ['invoice_payments'],
     queryFn: async () => {
@@ -263,89 +293,7 @@ export default function Cards() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['credit_cards'] }); toast.success('Cartão removido!'); },
   });
 
-  const monthName = MONTH_NAMES[month]; // 0-indexed
-
-  /**
-   * Get transactions that belong to the invoice of the selected month/year for a given card.
-   * Uses purchase date + closing day to determine invoice month (not the date range directly).
-   */
-  function getTransactionsForInvoice(card: any, targetMonth: number, targetYear: number) {
-    return allCardTransactions.filter((t: any) => {
-      if (t.card_id !== card.id) return false;
-      const { invoiceMonth, invoiceYear } = getInvoiceMonthForDate(t.date, card.closing_day);
-      return invoiceMonth === targetMonth && invoiceYear === targetYear;
-    });
-  }
-
-  /**
-   * Get payments that match a specific invoice (card + month/year).
-   * We match by the description pattern "Pagamento fatura {cardName} - {monthName}/{year}"
-   */
-  function getPaymentsForInvoice(card: any, targetMonth: number, targetYear: number) {
-    const mName = MONTH_NAMES[targetMonth];
-    return allPayments.filter((p: any) =>
-      p.description.includes(card.name) &&
-      p.description.includes(mName) &&
-      p.description.includes(String(targetYear))
-    );
-  }
-
-  /**
-   * Calculate the real available limit for a card.
-   * Considers:
-   *   1. All unpaid invoices (past months with balance remaining)
-   *   2. Current month invoice balance
-   *   3. Future installments (transactions whose invoice month is in the future)
-   *
-   * Available = card_limit - SUM(all unpaid/future charges)
-   */
-  function getCardUsedLimit(card: any): number {
-    const today = new Date();
-    const todayMonth = today.getMonth();
-    const todayYear = today.getFullYear();
-
-    // Group all card transactions by their invoice month
-    const invoiceMap = new Map<string, number>(); // key: "YYYY-MM", value: total spent
-    for (const t of allCardTransactions) {
-      if (t.card_id !== card.id) continue;
-      const { invoiceMonth, invoiceYear } = getInvoiceMonthForDate(t.date, card.closing_day);
-      const key = `${invoiceYear}-${String(invoiceMonth + 1).padStart(2, '0')}`;
-      invoiceMap.set(key, (invoiceMap.get(key) || 0) + Number(t.amount));
-    }
-
-    let totalUsed = 0;
-
-    for (const [key, spent] of invoiceMap.entries()) {
-      const [ky, km] = key.split('-').map(Number);
-      const invoiceMonth = km - 1; // back to 0-indexed
-      const invoiceYear = ky;
-
-      // Check if this invoice has been paid
-      const payments = getPaymentsForInvoice(card, invoiceMonth, invoiceYear);
-      const paid = payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
-      const unpaid = Math.max(0, spent - paid);
-
-      // Only count if:
-      // - It's a past invoice with unpaid balance (still consuming limit)
-      // - It's the current month's invoice (always consuming limit until paid)
-      // - It's a future invoice (installments already committed)
-      const isPastOrPresent =
-        invoiceYear < todayYear ||
-        (invoiceYear === todayYear && invoiceMonth <= todayMonth);
-      const isFuture =
-        invoiceYear > todayYear ||
-        (invoiceYear === todayYear && invoiceMonth > todayMonth);
-
-      if (isPastOrPresent && unpaid > 0) {
-        totalUsed += unpaid;
-      } else if (isFuture) {
-        // Future installments: full amount still pending (no payments expected yet)
-        totalUsed += spent;
-      }
-    }
-
-    return totalUsed;
-  }
+  const monthName = MONTH_NAMES[month];
 
   return (
     <div className="space-y-6">
@@ -357,9 +305,7 @@ export default function Cards() {
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
           <Dialog open={showCreate} onOpenChange={setShowCreate}>
-            <DialogTrigger asChild>
-              <Button className="gradient-primary gap-2"><Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo Cartão</span></Button>
-            </DialogTrigger>
+            <DialogTrigger asChild><Button className="gradient-primary gap-2"><Plus className="w-4 h-4" /> <span className="hidden sm:inline">Novo Cartão</span></Button></DialogTrigger>
             <DialogContent className="bg-card border-border">
               <DialogHeader><DialogTitle>Novo Cartão</DialogTitle></DialogHeader>
               <CardDialog onClose={() => setShowCreate(false)} />
@@ -379,22 +325,25 @@ export default function Cards() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {cards.map((card: any) => {
-            // Transactions belonging to the selected month's invoice
-            const cardTx = getTransactionsForInvoice(card, month, year);
-            const spent = cardTx.reduce((s: number, t: any) => s + Number(t.amount), 0);
+            const period = getInvoicePeriod(month, year, card.closing_day);
 
-            // Payments for the selected month's invoice
-            const payments = getPaymentsForInvoice(card, month, year);
+            const cardTx = allCardTransactions.filter((t: any) =>
+              t.card_id === card.id &&
+              t.type === 'expense' &&
+              t.date >= period.start &&
+              t.date <= period.end
+            );
+            const spent = cardTx.reduce((s: number, t: any) => s + Number(t.amount), 0);
+            const pct = card.card_limit > 0 ? Math.min(100, (spent / Number(card.card_limit)) * 100) : 0;
+            const available = Math.max(0, Number(card.card_limit) - spent);
+            const isExpanded = expandedCard === card.id;
+
+            const payments = allPayments.filter((p: any) =>
+              p.description.includes(card.name) && p.description.includes(monthName)
+            );
             const alreadyPaid = payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
             const remaining = spent - alreadyPaid;
             const isFullyPaid = alreadyPaid >= spent && spent > 0;
-
-            // Real used limit (all unpaid past/present + all future installments)
-            const usedLimit = getCardUsedLimit(card);
-            const available = Math.max(0, Number(card.card_limit) - usedLimit);
-            const pct = card.card_limit > 0 ? Math.min(100, (usedLimit / Number(card.card_limit)) * 100) : 0;
-
-            const isExpanded = expandedCard === card.id;
 
             return (
               <Card key={card.id} className="bg-card border-border overflow-hidden animate-fade-in">
@@ -421,15 +370,15 @@ export default function Cards() {
 
                 <div className="p-5 sm:p-6 space-y-4">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Fatura {monthName}/{year}</span>
+                    <span className="text-muted-foreground">Fatura do mês</span>
                     <span className="text-expense font-mono font-semibold">{formatCurrency(spent)}</span>
                   </div>
                   <Progress value={pct} className="h-2" />
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Disponível (real)</span>
+                    <span className="text-muted-foreground">Disponível</span>
                     <span className="text-income font-mono font-semibold">{formatCurrency(available)}</span>
                   </div>
-                  <div className="text-right text-xs text-muted-foreground">{pct.toFixed(0)}% utilizado (inclui parcelas futuras)</div>
+                  <div className="text-right text-xs text-muted-foreground">{pct.toFixed(0)}% utilizado</div>
 
                   {alreadyPaid > 0 && (
                     <div className="pt-3 pb-2 border-t border-border space-y-1">
@@ -454,7 +403,11 @@ export default function Cards() {
                           <span className="text-income font-semibold">Fatura Paga</span>
                         </div>
                       ) : (
-                        <Button variant="outline" className="w-full gap-2" onClick={() => setPayingInvoice({ card, spent, alreadyPaid })}>
+                        <Button
+                          variant="outline"
+                          className="w-full gap-2"
+                          onClick={() => setPayingInvoice({ card, spent, alreadyPaid })}
+                        >
                           <Wallet className="w-4 h-4" />
                           {alreadyPaid > 0 ? `Pagar Restante (${formatCurrency(remaining)})` : 'Pagar Fatura'}
                         </Button>
@@ -468,7 +421,7 @@ export default function Cards() {
                         onClick={() => setExpandedCard(isExpanded ? null : card.id)}
                         className="flex items-center justify-between w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
                       >
-                        <span>Transações da fatura ({cardTx.length})</span>
+                        <span>Transações do mês ({cardTx.length})</span>
                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </button>
                       {isExpanded && (
@@ -478,8 +431,8 @@ export default function Cards() {
                               <div className="flex items-center gap-2 min-w-0">
                                 <TrendingDown className="w-3.5 h-3.5 text-expense shrink-0" />
                                 <span className="text-foreground truncate">{t.description}</span>
-                                {t.receipt_url && (
-                                  <button onClick={() => setPreviewReceipt(t.receipt_url)} className="shrink-0">
+                                {(t as any).receipt_url && (
+                                  <button onClick={() => setPreviewReceipt((t as any).receipt_url)} className="shrink-0">
                                     <FileText className="w-3 h-3 text-primary" />
                                   </button>
                                 )}
