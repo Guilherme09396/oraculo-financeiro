@@ -16,23 +16,25 @@ import {
 import { Plus, Trash2, CreditCard, Pencil, TrendingDown, ChevronDown, ChevronUp, FileText, Wallet, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-function getInvoicePeriod(month: number, year: number, closingDay: number) {
-  // month is 0-indexed here (JS Date style)
-  // We want: period starts day after closing of previous month, ends on closing day of current month
-  const periodEnd = new Date(year, month, closingDay);
-  const periodStart = new Date(year, month - 1, closingDay + 1);
+/**
+ * Given a transaction date and card closing day, returns which invoice month/year
+ * that transaction belongs to.
+ * Rule:
+ *   - purchaseDay <= closingDay → belongs to CURRENT month's invoice
+ *   - purchaseDay > closingDay  → belongs to NEXT month's invoice
+ */
+function getInvoiceMonthForDate(dateStr: string, closingDay: number): { invoiceMonth: number; invoiceYear: number } {
+  const date = new Date(dateStr + 'T12:00:00');
+  const day = date.getDate();
+  let invoiceMonth = date.getMonth(); // 0-indexed
+  let invoiceYear = date.getFullYear();
 
-  const formatDateISO = (date: Date) => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
+  if (day > closingDay) {
+    invoiceMonth += 1;
+    if (invoiceMonth > 11) { invoiceMonth = 0; invoiceYear += 1; }
+  }
 
-  return {
-    start: formatDateISO(periodStart),
-    end: formatDateISO(periodEnd),
-  };
+  return { invoiceMonth, invoiceYear };
 }
 
 const CARD_COLORS = ['#6366f1', '#22c55e', '#ef4444', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
@@ -117,19 +119,18 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
   card: any;
   spent: number;
   alreadyPaid: number;
-  month: number;
+  month: number; // 0-indexed
   year: number;
   onClose: () => void;
 }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const remaining = spent - alreadyPaid;
-  const [amount, setAmount] = useState(String(remaining));
+  const [amount, setAmount] = useState(String(remaining.toFixed(2)));
   const [paidDate, setPaidDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [receiptUrl, setReceiptUrl] = useState('');
   const [uploading, setUploading] = useState(false);
 
-  // month is 0-indexed
   const monthName = MONTH_NAMES[month];
 
   const handleUpload = async (file: File) => {
@@ -151,12 +152,12 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
       const { data: cardCategory } = await supabase.from('categories').select('id').ilike('name', 'cartão').maybeSingle();
       let categoryId = cardCategory?.id || null;
       if (!categoryId) {
-        const { data: cardCategoryAlt } = await supabase.from('categories').select('id').ilike('name', 'cartao').maybeSingle();
-        categoryId = cardCategoryAlt?.id || null;
+        const { data: alt } = await supabase.from('categories').select('id').ilike('name', 'cartao').maybeSingle();
+        categoryId = alt?.id || null;
       }
       const { error } = await supabase.from('transactions').insert({
         user_id: user!.id,
-        description: `Pagamento fatura ${card.name} - ${monthName}`,
+        description: `Pagamento fatura ${card.name} - ${monthName}/${year}`,
         amount: paymentAmount,
         type: 'expense',
         date: paidDate,
@@ -201,7 +202,7 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
         ) : <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />}
       </div>
       <p className="text-xs text-muted-foreground">
-        💡 Uma despesa será criada com categoria "Cartão" e método PIX na data informada, impactando o saldo do mês correspondente.
+        💡 Uma despesa será criada com categoria "Cartão" e método PIX na data informada.
       </p>
       <Button onClick={() => mut.mutate()} className="w-full gradient-primary" disabled={mut.isPending}>
         {mut.isPending ? 'Registrando...' : 'Pagar Fatura'}
@@ -212,8 +213,7 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }: {
 
 export default function Cards() {
   const now = new Date();
-  // month is 0-indexed (JS style)
-  const [month, setMonth] = useState(now.getMonth());
+  const [month, setMonth] = useState(now.getMonth()); // 0-indexed
   const [year, setYear] = useState(now.getFullYear());
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -224,13 +224,14 @@ export default function Cards() {
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
   const [payingInvoice, setPayingInvoice] = useState<{ card: any; spent: number; alreadyPaid: number } | null>(null);
 
-  // Fetch ALL card transactions (no date filter) to calculate accumulated unpaid balance
+  // All card transactions ever (no date filter) — date = real purchase date
   const { data: allCardTransactions = [] } = useQuery({
     queryKey: ['card_transactions'],
     queryFn: async () => {
       const { data, error } = await supabase.from('transactions')
         .select('*, categories(name, icon, color)')
         .not('card_id', 'is', null)
+        .eq('type', 'expense')
         .order('date', { ascending: false });
       if (error) throw error;
       return data;
@@ -238,7 +239,7 @@ export default function Cards() {
     enabled: !!user,
   });
 
-  // Fetch ALL invoice payments ever made (to know what has been paid)
+  // All invoice payments ever made
   const { data: allPayments = [] } = useQuery({
     queryKey: ['invoice_payments'],
     queryFn: async () => {
@@ -262,66 +263,88 @@ export default function Cards() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['credit_cards'] }); toast.success('Cartão removido!'); },
   });
 
-  // month is 0-indexed
-  const monthName = MONTH_NAMES[month];
+  const monthName = MONTH_NAMES[month]; // 0-indexed
 
   /**
-   * Calculate the total unpaid balance for a card across ALL months up to and including the selected month.
-   * This is what reduces the available limit.
-   * Logic:
-   *   - For each distinct invoice period that has expenses up to the current selected month,
-   *     calculate (total spent - total paid for that invoice).
-   *   - Sum all unpaid remainders → that is the "used limit".
+   * Get transactions that belong to the invoice of the selected month/year for a given card.
+   * Uses purchase date + closing day to determine invoice month (not the date range directly).
+   */
+  function getTransactionsForInvoice(card: any, targetMonth: number, targetYear: number) {
+    return allCardTransactions.filter((t: any) => {
+      if (t.card_id !== card.id) return false;
+      const { invoiceMonth, invoiceYear } = getInvoiceMonthForDate(t.date, card.closing_day);
+      return invoiceMonth === targetMonth && invoiceYear === targetYear;
+    });
+  }
+
+  /**
+   * Get payments that match a specific invoice (card + month/year).
+   * We match by the description pattern "Pagamento fatura {cardName} - {monthName}/{year}"
+   */
+  function getPaymentsForInvoice(card: any, targetMonth: number, targetYear: number) {
+    const mName = MONTH_NAMES[targetMonth];
+    return allPayments.filter((p: any) =>
+      p.description.includes(card.name) &&
+      p.description.includes(mName) &&
+      p.description.includes(String(targetYear))
+    );
+  }
+
+  /**
+   * Calculate the real available limit for a card.
+   * Considers:
+   *   1. All unpaid invoices (past months with balance remaining)
+   *   2. Current month invoice balance
+   *   3. Future installments (transactions whose invoice month is in the future)
+   *
+   * Available = card_limit - SUM(all unpaid/future charges)
    */
   function getCardUsedLimit(card: any): number {
-    // Build invoice periods from the earliest transaction to the selected month
-    // We'll iterate month by month from min transaction date to selected month
-    const cardTxAll = allCardTransactions.filter((t: any) => t.card_id === card.id && t.type === 'expense');
-    if (cardTxAll.length === 0) return 0;
+    const today = new Date();
+    const todayMonth = today.getMonth();
+    const todayYear = today.getFullYear();
 
-    // Find min date of transactions
-    const dates = cardTxAll.map((t: any) => new Date(t.date));
-    const minDate = new Date(Math.min(...dates.map((d: Date) => d.getTime())));
-
-    let totalUnpaid = 0;
-
-    // Iterate from minDate month to selected month
-    let iterYear = minDate.getFullYear();
-    let iterMonth = minDate.getMonth(); // 0-indexed
-
-    const selectedMonthEnd = new Date(year, month, card.closing_day);
-
-    while (true) {
-      const period = getInvoicePeriod(iterMonth, iterYear, card.closing_day);
-      const periodEnd = new Date(period.end);
-
-      // Only count periods whose end is on or before the selected month's closing day
-      if (periodEnd > selectedMonthEnd) break;
-
-      const txInPeriod = cardTxAll.filter((t: any) => t.date >= period.start && t.date <= period.end);
-      const spent = txInPeriod.reduce((s: number, t: any) => s + Number(t.amount), 0);
-
-      if (spent > 0) {
-        // Find payments for this specific invoice period
-        // Payments are matched by card name and month name
-        const pMonthName = MONTH_NAMES[iterMonth];
-        const payments = allPayments.filter((p: any) =>
-          p.description.includes(card.name) && p.description.includes(pMonthName)
-        );
-        const paid = payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
-        const unpaid = Math.max(0, spent - paid);
-        totalUnpaid += unpaid;
-      }
-
-      // Advance to next month
-      iterMonth++;
-      if (iterMonth > 11) { iterMonth = 0; iterYear++; }
-
-      // Safety: don't go beyond selected month + 1
-      if (iterYear > year || (iterYear === year && iterMonth > month + 1)) break;
+    // Group all card transactions by their invoice month
+    const invoiceMap = new Map<string, number>(); // key: "YYYY-MM", value: total spent
+    for (const t of allCardTransactions) {
+      if (t.card_id !== card.id) continue;
+      const { invoiceMonth, invoiceYear } = getInvoiceMonthForDate(t.date, card.closing_day);
+      const key = `${invoiceYear}-${String(invoiceMonth + 1).padStart(2, '0')}`;
+      invoiceMap.set(key, (invoiceMap.get(key) || 0) + Number(t.amount));
     }
 
-    return totalUnpaid;
+    let totalUsed = 0;
+
+    for (const [key, spent] of invoiceMap.entries()) {
+      const [ky, km] = key.split('-').map(Number);
+      const invoiceMonth = km - 1; // back to 0-indexed
+      const invoiceYear = ky;
+
+      // Check if this invoice has been paid
+      const payments = getPaymentsForInvoice(card, invoiceMonth, invoiceYear);
+      const paid = payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
+      const unpaid = Math.max(0, spent - paid);
+
+      // Only count if:
+      // - It's a past invoice with unpaid balance (still consuming limit)
+      // - It's the current month's invoice (always consuming limit until paid)
+      // - It's a future invoice (installments already committed)
+      const isPastOrPresent =
+        invoiceYear < todayYear ||
+        (invoiceYear === todayYear && invoiceMonth <= todayMonth);
+      const isFuture =
+        invoiceYear > todayYear ||
+        (invoiceYear === todayYear && invoiceMonth > todayMonth);
+
+      if (isPastOrPresent && unpaid > 0) {
+        totalUsed += unpaid;
+      } else if (isFuture) {
+        // Future installments: full amount still pending (no payments expected yet)
+        totalUsed += spent;
+      }
+    }
+
+    return totalUsed;
   }
 
   return (
@@ -356,26 +379,17 @@ export default function Cards() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {cards.map((card: any) => {
-            // Period for the SELECTED month (to show this month's transactions)
-            const period = getInvoicePeriod(month, year, card.closing_day);
-
-            const cardTx = allCardTransactions.filter((t: any) =>
-              t.card_id === card.id &&
-              t.type === 'expense' &&
-              t.date >= period.start &&
-              t.date <= period.end
-            );
+            // Transactions belonging to the selected month's invoice
+            const cardTx = getTransactionsForInvoice(card, month, year);
             const spent = cardTx.reduce((s: number, t: any) => s + Number(t.amount), 0);
 
             // Payments for the selected month's invoice
-            const payments = allPayments.filter((p: any) =>
-              p.description.includes(card.name) && p.description.includes(monthName)
-            );
+            const payments = getPaymentsForInvoice(card, month, year);
             const alreadyPaid = payments.reduce((sum: number, p: any) => sum + Number(p.amount), 0);
             const remaining = spent - alreadyPaid;
             const isFullyPaid = alreadyPaid >= spent && spent > 0;
 
-            // Used limit = sum of ALL unpaid invoice balances across all months (reduces available limit)
+            // Real used limit (all unpaid past/present + all future installments)
             const usedLimit = getCardUsedLimit(card);
             const available = Math.max(0, Number(card.card_limit) - usedLimit);
             const pct = card.card_limit > 0 ? Math.min(100, (usedLimit / Number(card.card_limit)) * 100) : 0;
@@ -407,15 +421,15 @@ export default function Cards() {
 
                 <div className="p-5 sm:p-6 space-y-4">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Fatura do mês</span>
+                    <span className="text-muted-foreground">Fatura {monthName}/{year}</span>
                     <span className="text-expense font-mono font-semibold">{formatCurrency(spent)}</span>
                   </div>
                   <Progress value={pct} className="h-2" />
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Disponível</span>
+                    <span className="text-muted-foreground">Disponível (real)</span>
                     <span className="text-income font-mono font-semibold">{formatCurrency(available)}</span>
                   </div>
-                  <div className="text-right text-xs text-muted-foreground">{pct.toFixed(0)}% utilizado (acumulado)</div>
+                  <div className="text-right text-xs text-muted-foreground">{pct.toFixed(0)}% utilizado (inclui parcelas futuras)</div>
 
                   {alreadyPaid > 0 && (
                     <div className="pt-3 pb-2 border-t border-border space-y-1">
@@ -454,7 +468,7 @@ export default function Cards() {
                         onClick={() => setExpandedCard(isExpanded ? null : card.id)}
                         className="flex items-center justify-between w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
                       >
-                        <span>Transações do mês ({cardTx.length})</span>
+                        <span>Transações da fatura ({cardTx.length})</span>
                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </button>
                       {isExpanded && (

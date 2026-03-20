@@ -21,35 +21,23 @@ import {
 import { Plus, Search, Trash2, TrendingUp, TrendingDown, Pencil, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
-/**
- * Given a purchase date and card closing day, returns ISO date strings for each installment.
- * Rule:
- *   - purchaseDay <= closingDay → first installment in SAME month's invoice
- *   - purchaseDay > closingDay  → first installment in NEXT month's invoice
- * We set the date to the closing day of each invoice month (so it clearly lands within that period).
- */
-function getInstallmentDates(purchaseDateStr: string, closingDay: number, installments: number): string[] {
+const MONTH_NAMES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+];
+
+function getFirstInstallmentInvoiceMonth(purchaseDateStr: string, closingDay: number): string {
   const purchase = new Date(purchaseDateStr + 'T12:00:00');
   const purchaseDay = purchase.getDate();
-  let firstInvoiceMonth = purchase.getMonth(); // 0-indexed
-  let firstInvoiceYear = purchase.getFullYear();
+  let invoiceMonth = purchase.getMonth();
+  let invoiceYear = purchase.getFullYear();
 
   if (purchaseDay > closingDay) {
-    firstInvoiceMonth += 1;
-    if (firstInvoiceMonth > 11) { firstInvoiceMonth = 0; firstInvoiceYear += 1; }
+    invoiceMonth += 1;
+    if (invoiceMonth > 11) { invoiceMonth = 0; invoiceYear += 1; }
   }
 
-  const dates: string[] = [];
-  for (let i = 0; i < installments; i++) {
-    let m = firstInvoiceMonth + i;
-    let y = firstInvoiceYear;
-    while (m > 11) { m -= 12; y += 1; }
-    const day = Math.min(closingDay, new Date(y, m + 1, 0).getDate());
-    const mm = String(m + 1).padStart(2, '0');
-    const dd = String(day).padStart(2, '0');
-    dates.push(`${y}-${mm}-${dd}`);
-  }
-  return dates;
+  return `${MONTH_NAMES[invoiceMonth]}/${invoiceYear}`;
 }
 
 function TransactionDialog({ transaction, onClose, defaultType }: { transaction?: any; onClose: () => void; defaultType?: string }) {
@@ -98,8 +86,8 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
   const selectedCard = cards?.find((c: any) => c.id === cardId);
 
   const bulkMut = useMutation({
-    mutationFn: async (transactions: any[]) => {
-      const { error } = await supabase.from('transactions').insert(transactions);
+    mutationFn: async (txList: any[]) => {
+      const { error } = await supabase.from('transactions').insert(txList);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -116,12 +104,12 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
     const totalAmount = parseFloat(amount);
 
     if (isEditing) {
-      const data: any = {
+      update.mutate({
+        id: transaction.id,
         description, amount: totalAmount, type, category_id: categoryId || null,
         date, payment_method: paymentMethod || null, notes: notes || null, receipt_url: receiptUrl || null,
         card_id: (paymentMethod === 'credit_card' && cardId) ? cardId : null,
-      };
-      update.mutate({ id: transaction.id, ...data }, { onSuccess: onClose });
+      }, { onSuccess: onClose });
       return;
     }
 
@@ -132,32 +120,32 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
         return;
       }
       const installmentAmount = Math.round((totalAmount / numInstallments) * 100) / 100;
-      const dates = getInstallmentDates(date, selectedCard.closing_day, numInstallments);
 
-      const transactions = dates.map((d, i) => ({
+      // All installments keep the SAME purchase date
+      const txList = Array.from({ length: numInstallments }, (_, i) => ({
         user_id: user!.id,
         description: `${description} (${i + 1}/${numInstallments}x)`,
         amount: installmentAmount,
         type: 'expense',
         category_id: categoryId || null,
-        date: d,
+        date, // same purchase date
         payment_method: 'credit_card',
         notes: notes || null,
         receipt_url: i === 0 ? (receiptUrl || null) : null,
         card_id: cardId,
+        installment_index: i + 1,
+        installment_total: numInstallments,
       }));
 
-      bulkMut.mutate(transactions);
+      bulkMut.mutate(txList);
       return;
     }
 
-    // Normal single transaction
-    const data: any = {
+    create.mutate({
       description, amount: totalAmount, type, category_id: categoryId || null,
       date, payment_method: paymentMethod || null, notes: notes || null, receipt_url: receiptUrl || null,
       card_id: (paymentMethod === 'credit_card' && cardId) ? cardId : null,
-    };
-    create.mutate(data, { onSuccess: onClose });
+    }, { onSuccess: onClose });
   };
 
   const isSaving = create.isPending || update.isPending || bulkMut.isPending;
@@ -230,22 +218,12 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
           <div className="flex items-center gap-3">
             <Label className="flex-1">É uma compra parcelada?</Label>
             <div className="flex gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={isInstallment ? 'default' : 'outline'}
-                onClick={() => setIsInstallment(true)}
-                className={isInstallment ? 'gradient-primary' : ''}
-              >
+              <Button type="button" size="sm" variant={isInstallment ? 'default' : 'outline'}
+                onClick={() => setIsInstallment(true)} className={isInstallment ? 'gradient-primary' : ''}>
                 Sim
               </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={!isInstallment ? 'default' : 'outline'}
-                onClick={() => setIsInstallment(false)}
-                className={!isInstallment ? 'gradient-primary' : ''}
-              >
+              <Button type="button" size="sm" variant={!isInstallment ? 'default' : 'outline'}
+                onClick={() => setIsInstallment(false)} className={!isInstallment ? 'gradient-primary' : ''}>
                 Não
               </Button>
             </div>
@@ -253,19 +231,12 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
           {isInstallment && (
             <div className="space-y-2">
               <Label>Número de parcelas</Label>
-              <Input
-                type="number"
-                min="2"
-                max="48"
-                value={installments}
-                onChange={e => setInstallments(e.target.value)}
-                className="bg-secondary border-border"
-                required
-              />
-              {amount && !isNaN(parseFloat(amount)) && parseInt(installments) >= 2 && (
+              <Input type="number" min="2" max="48" value={installments}
+                onChange={e => setInstallments(e.target.value)} className="bg-secondary border-border" required />
+              {amount && !isNaN(parseFloat(amount)) && parseInt(installments) >= 2 && selectedCard && (
                 <p className="text-xs text-muted-foreground">
                   💡 {installments}x de <strong>{formatCurrency(Math.round((parseFloat(amount) / parseInt(installments)) * 100) / 100)}</strong>
-                  {selectedCard && ` — 1ª parcela: ${getInstallmentDates(date, selectedCard.closing_day, 1)[0]}`}
+                  {' '}— 1ª parcela na fatura de <strong>{getFirstInstallmentInvoiceMonth(date, selectedCard.closing_day)}</strong>
                 </p>
               )}
             </div>
@@ -417,7 +388,7 @@ export default function Transactions() {
                     {t.type === 'income' ? '+' : '-'}{formatCurrency(Number(t.amount))}
                   </span>
                   {(t as any).receipt_url && (
-                    <Button variant="ghost" size="icon" onClick={() => setPreviewReceipt((t as any).receipt_url)} className="h-8 w-8" title="Ver comprovante">
+                    <Button variant="ghost" size="icon" onClick={() => setPreviewReceipt((t as any).receipt_url)} className="h-8 w-8">
                       <FileText className="w-3.5 h-3.5 text-primary" />
                     </Button>
                   )}
