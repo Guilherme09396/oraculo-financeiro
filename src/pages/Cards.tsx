@@ -323,7 +323,7 @@ export default function Cards() {
           <p className="text-sm mt-1">Adicione um cartão para acompanhar seus gastos</p>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {cards.map((card: any) => {
             const period = getInvoicePeriod(month, year, card.closing_day);
 
@@ -346,12 +346,12 @@ export default function Cards() {
             const isFullyPaid = alreadyPaid >= spent && spent > 0;
 
             return (
-              <Card key={card.id} className="bg-card border-border overflow-hidden animate-fade-in">
-                <div className="p-5 sm:p-6 relative" style={{ background: `linear-gradient(135deg, ${card.color}, ${card.color}88)` }}>
+              <Card key={card.id} className="bg-card border-border overflow-hidden animate-fade-in rounded-xl">
+                <div className="p-3 sm:p-4 relative" style={{ background: `linear-gradient(135deg, ${card.color}, ${card.color}88)` }}>
                   <div className="flex items-start justify-between">
                     <div>
-                      <p className="text-white/80 text-sm">💳 {card.name}</p>
-                      <p className="text-white text-xl sm:text-2xl font-bold mt-1">{formatCurrency(Number(card.card_limit))}</p>
+                      <p className="text-white/80 text-xs">💳 {card.name}</p>
+                      <p className="text-white text-lg sm:text-xl font-bold mt-0.5">{formatCurrency(Number(card.card_limit))}</p>
                     </div>
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-white/80 hover:text-white hover:bg-white/20" onClick={() => setEditing(card)}>
@@ -362,26 +362,26 @@ export default function Cards() {
                       </Button>
                     </div>
                   </div>
-                  <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
                     <div><p className="text-white/60">Fechamento</p><p className="text-white font-semibold">Dia {card.closing_day}</p></div>
                     <div><p className="text-white/60">Vencimento</p><p className="text-white font-semibold">Dia {card.due_day}</p></div>
                   </div>
                 </div>
 
-                <div className="p-5 sm:p-6 space-y-4">
-                  <div className="flex items-center justify-between text-sm">
+                <div className="p-3 sm:p-4 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">Fatura do mês</span>
                     <span className="text-expense font-mono font-semibold">{formatCurrency(spent)}</span>
                   </div>
-                  <Progress value={pct} className="h-2" />
-                  <div className="flex items-center justify-between text-sm">
+                  <Progress value={pct} className="h-1.5" />
+                  <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">Disponível</span>
                     <span className="text-income font-mono font-semibold">{formatCurrency(available)}</span>
                   </div>
-                  <div className="text-right text-xs text-muted-foreground">{pct.toFixed(0)}% utilizado</div>
+                  <div className="text-right text-[10px] text-muted-foreground">{pct.toFixed(0)}% utilizado</div>
 
                   {alreadyPaid > 0 && (
-                    <div className="pt-3 pb-2 border-t border-border space-y-1">
+                    <div className="pt-2 pb-1 border-t border-border space-y-0.5">
                       <div className="flex items-center justify-between text-sm">
                         <span className="text-muted-foreground">Já pago</span>
                         <span className="text-income font-mono font-semibold">{formatCurrency(alreadyPaid)}</span>
@@ -398,14 +398,14 @@ export default function Cards() {
                   {spent > 0 && (
                     <>
                       {isFullyPaid ? (
-                        <div className="flex items-center justify-center gap-2 p-3 bg-income/10 border border-income/20 rounded-lg">
+                        <div className="flex items-center justify-center gap-2 p-2 bg-income/10 border border-income/20 rounded-lg">
                           <CheckCircle2 className="w-5 h-5 text-income" />
                           <span className="text-income font-semibold">Fatura Paga</span>
                         </div>
                       ) : (
                         <Button
                           variant="outline"
-                          className="w-full gap-2"
+                          className="w-full gap-2 h-8 text-xs"
                           onClick={() => setPayingInvoice({ card, spent, alreadyPaid })}
                         >
                           <Wallet className="w-4 h-4" />
@@ -425,7 +425,7 @@ export default function Cards() {
                         {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                       </button>
                       {isExpanded && (
-                        <div className="space-y-2 mt-3 max-h-[300px] overflow-y-auto">
+                        <div className="space-y-1 mt-2 max-h-[220px] overflow-y-auto">
                           {cardTx.map((t: any) => (
                             <div key={t.id} className="flex items-center justify-between text-sm gap-2">
                               <div className="flex items-center gap-2 min-w-0">
@@ -438,7 +438,7 @@ export default function Cards() {
                                 )}
                               </div>
                               <div className="text-right shrink-0">
-                                <span className="text-expense font-mono text-xs">{formatCurrency(Number(t.amount))}</span>
+                                <span className="text-expense font-mono text-[11px]">{formatCurrency(Number(t.amount))}</span>
                                 <p className="text-[10px] text-muted-foreground">{formatDate(t.date)}</p>
                               </div>
                             </div>

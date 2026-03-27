@@ -31,6 +31,8 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
   const [cardId, setCardId] = useState((transaction as any)?.card_id || '');
   const [receiptUrl, setReceiptUrl] = useState((transaction as any)?.receipt_url || '');
   const [uploading, setUploading] = useState(false);
+  const [isThirdParty, setIsThirdParty] = useState((transaction as any)?.is_third_party || false);
+  const [thirdPartyName, setThirdPartyName] = useState((transaction as any)?.third_party_name || '');
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const { data: categories = [] } = useCategories('expense');
@@ -56,9 +58,19 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const data: any = {
-      description, amount: parseFloat(amount), type: 'expense', category_id: categoryId || null,
-      date, payment_method: paymentMethod || null, notes: null, receipt_url: receiptUrl || null,
+      description,
+      amount: parseFloat(amount),
+      type: 'expense',
+      category_id: categoryId || null,
+      date,
+      payment_method: paymentMethod || null,
+      notes: null,
+      receipt_url: receiptUrl || null,
       card_id: (paymentMethod === 'credit_card' && cardId) ? cardId : null,
+
+      // NOVOS CAMPOS
+      is_third_party: isThirdParty,
+      third_party_name: isThirdParty ? thirdPartyName : null,
     };
     if (isEditing) update.mutate({ id: transaction.id, ...data }, { onSuccess: onClose });
     else create.mutate(data, { onSuccess: onClose });
@@ -110,6 +122,31 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
           </div>
         ) : <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />}
       </div>
+      <div className="space-y-2">
+        <Label>Essa despesa é de outra pessoa?</Label>
+        <Select value={isThirdParty ? 'yes' : 'no'} onValueChange={(v) => setIsThirdParty(v === 'yes')}>
+          <SelectTrigger className="bg-secondary border-border">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="no">Não</SelectItem>
+            <SelectItem value="yes">Sim</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {isThirdParty && (
+        <div className="space-y-2">
+          <Label>Nome da pessoa</Label>
+          <Input
+            value={thirdPartyName}
+            onChange={e => setThirdPartyName(e.target.value)}
+            placeholder="Ex: João..."
+            className="bg-secondary border-border"
+            required
+          />
+        </div>
+      )}
       <Button type="submit" className="w-full gradient-primary" disabled={create.isPending || update.isPending}>
         {(create.isPending || update.isPending) ? 'Salvando...' : isEditing ? 'Atualizar' : 'Adicionar'}
       </Button>
@@ -181,6 +218,11 @@ export default function Expenses() {
                     <p className="font-medium text-foreground text-sm sm:text-base truncate">{t.description}</p>
                     <p className="text-xs text-muted-foreground truncate">
                       {formatDate(t.date)} · {(t as any).categories?.name || 'Sem categoria'}
+
+                      {t.is_third_party && (
+                        <> · 👤 {t.third_party_name}</>
+                      )}
+
                       {t.payment_method === 'credit_card' && ' · 💳 Cartão'}
                     </p>
                   </div>
