@@ -19,44 +19,61 @@ import Assistant from "@/pages/Assistant";
 import Cards from "@/pages/Cards";
 import SettingsPage from "@/pages/Settings";
 import NotFound from "./pages/NotFound";
+import InvoiceImport from "./pages/InvoiceImport";
 
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route
-              element={
-                <RequireAuth>
-                  <AppLayout />
-                </RequireAuth>
-              }
-            >
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/transactions" element={<Transactions />} />
-              <Route path="/income" element={<Income />} />
-              <Route path="/expenses" element={<Expenses />} />
-              <Route path="/future" element={<FutureTransactions />} />
-              <Route path="/goals" element={<Goals />} />
-              <Route path="/categories" element={<Categories />} />
-              <Route path="/cards" element={<Cards />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/assistant" element={<Assistant />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Route>
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+    <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+                <AuthProvider>
+                    <Routes>
+                        <Route path="/login" element={<Login />} />
+                        <Route path="/signup" element={<Signup />} />
+                        <Route
+                            element={
+                                <RequireAuth>
+                                    <AppLayout />
+                                </RequireAuth>
+                            }
+                        >
+                            <Route path="/" element={<Dashboard />} />
+                            <Route
+                                path="/transactions"
+                                element={<Transactions />}
+                            />
+                            <Route path="/income" element={<Income />} />
+                            <Route path="/expenses" element={<Expenses />} />
+                            <Route
+                                path="/future"
+                                element={<FutureTransactions />}
+                            />
+                            <Route path="/goals" element={<Goals />} />
+                            <Route
+                                path="/categories"
+                                element={<Categories />}
+                            />
+                            <Route path="/cards" element={<Cards />} />
+                            <Route path="/reports" element={<Reports />} />
+                            <Route path="/assistant" element={<Assistant />} />
+                            <Route
+                                path="/invoice-import"
+                                element={<InvoiceImport />}
+                            />
+                            <Route
+                                path="/settings"
+                                element={<SettingsPage />}
+                            />
+                        </Route>
+                        <Route path="*" element={<NotFound />} />
+                    </Routes>
+                </AuthProvider>
+            </BrowserRouter>
+        </TooltipProvider>
+    </QueryClientProvider>
 );
 
 export default App;

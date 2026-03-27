@@ -1,3 +1,15 @@
+/**
+ * Expenses_MODIFIED.tsx
+ *
+ * INSTRUÇÕES: Este arquivo substitui seu Expenses.tsx atual.
+ * As únicas mudanças em relação ao original são:
+ *  1. Import do ícone `FileUp` do lucide-react
+ *  2. Botão "Importar Fatura" no header que abre o InvoiceImport em um Dialog
+ *  3. Import do componente InvoiceImport
+ *
+ * Copie este conteúdo para o seu src/pages/Expenses.tsx
+ */
+
 import { useState } from 'react';
 import { useTransactions, useCreateTransaction, useDeleteTransaction, useUpdateTransaction } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
@@ -11,13 +23,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import MonthSelector from '@/components/MonthSelector';
 import ReceiptPreviewDialog from '@/components/ReceiptPreviewDialog';
+// ✅ NOVO: Import do componente de importação de fatura
+import InvoiceImport from '@/pages/InvoiceImport';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
-import { Plus, TrendingDown, Pencil, Trash2, FileText } from 'lucide-react';
+// ✅ NOVO: Adicionado FileUp
+import { Plus, TrendingDown, Pencil, Trash2, FileText, FileUp } from 'lucide-react';
 import { toast } from 'sonner';
 
 function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: () => void }) {
@@ -67,8 +82,6 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
       notes: null,
       receipt_url: receiptUrl || null,
       card_id: (paymentMethod === 'credit_card' && cardId) ? cardId : null,
-
-      // NOVOS CAMPOS
       is_third_party: isThirdParty,
       third_party_name: isThirdParty ? thirdPartyName : null,
     };
@@ -125,26 +138,17 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
       <div className="space-y-2">
         <Label>Essa despesa é de outra pessoa?</Label>
         <Select value={isThirdParty ? 'yes' : 'no'} onValueChange={(v) => setIsThirdParty(v === 'yes')}>
-          <SelectTrigger className="bg-secondary border-border">
-            <SelectValue />
-          </SelectTrigger>
+          <SelectTrigger className="bg-secondary border-border"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="no">Não</SelectItem>
             <SelectItem value="yes">Sim</SelectItem>
           </SelectContent>
         </Select>
       </div>
-
       {isThirdParty && (
         <div className="space-y-2">
           <Label>Nome da pessoa</Label>
-          <Input
-            value={thirdPartyName}
-            onChange={e => setThirdPartyName(e.target.value)}
-            placeholder="Ex: João..."
-            className="bg-secondary border-border"
-            required
-          />
+          <Input value={thirdPartyName} onChange={e => setThirdPartyName(e.target.value)} placeholder="Ex: João..." className="bg-secondary border-border" required />
         </div>
       )}
       <Button type="submit" className="w-full gradient-primary" disabled={create.isPending || update.isPending}>
@@ -162,6 +166,8 @@ export default function Expenses() {
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
+  // ✅ NOVO: estado para o dialog de importação de fatura
+  const [showInvoiceImport, setShowInvoiceImport] = useState(false);
 
   const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
@@ -182,6 +188,23 @@ export default function Expenses() {
         </div>
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
+
+          {/* ✅ NOVO: Botão Importar Fatura */}
+          <Dialog open={showInvoiceImport} onOpenChange={setShowInvoiceImport}>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <FileUp className="w-4 h-4" />
+                <span className="hidden sm:inline">Importar Fatura</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-card border-border max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Importar Fatura do Cartão</DialogTitle>
+              </DialogHeader>
+              <InvoiceImport />
+            </DialogContent>
+          </Dialog>
+
           <Dialog open={showCreate} onOpenChange={setShowCreate}>
             <DialogTrigger asChild><Button className="gradient-primary gap-2"><Plus className="w-4 h-4" /> <span className="hidden sm:inline">Nova Despesa</span></Button></DialogTrigger>
             <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>Nova Despesa</DialogTitle></DialogHeader>
@@ -218,11 +241,7 @@ export default function Expenses() {
                     <p className="font-medium text-foreground text-sm sm:text-base truncate">{t.description}</p>
                     <p className="text-xs text-muted-foreground truncate">
                       {formatDate(t.date)} · {(t as any).categories?.name || 'Sem categoria'}
-
-                      {t.is_third_party && (
-                        <> · 👤 {t.third_party_name}</>
-                      )}
-
+                      {t.is_third_party && (<> · 👤 {t.third_party_name}</>)}
                       {t.payment_method === 'credit_card' && ' · 💳 Cartão'}
                     </p>
                   </div>

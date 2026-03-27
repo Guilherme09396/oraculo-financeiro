@@ -1,13 +1,34 @@
+/**
+ * Assistant_MODIFIED.tsx
+ *
+ * INSTRUÇÕES: Este arquivo substitui seu Assistant.tsx atual.
+ * As mudanças em relação ao original são:
+ *  1. O botão 📷 agora aceita também PDF
+ *  2. Adicionado botão 📄 separado especificamente para "Importar Fatura"
+ *     que abre o componente InvoiceImport em um Dialog
+ *  3. O upload de imagem agora suporta também PDF (ambos vão para OCR)
+ *
+ * Copie este conteúdo para o seu src/pages/Assistant.tsx (ou onde estiver seu A.tsx)
+ */
+
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Bot, Send, Mic, MicOff, Zap, User } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Bot, Send, Mic, MicOff, Zap, User, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import Tesseract from 'tesseract.js';
+// ✅ NOVO: Import do componente de importação de fatura
+import InvoiceImport from '@/pages/InvoiceImport';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -26,6 +47,8 @@ export default function Assistant() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  // ✅ NOVO: estado para o dialog de importação de fatura
+  const [showInvoiceImport, setShowInvoiceImport] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
 
@@ -114,7 +137,6 @@ export default function Assistant() {
     'Resumo financeiro do mês',
   ];
 
-  // Função de classificação inteligente
   const classifyTransaction = (text: string): ParsedTransaction => {
     const valorRegex = /R\$\s?([\d.,]+)/g;
     const parcelaRegex = /(\d+)x\s+de\s+R\$\s?([\d.,]+)/gi;
@@ -146,7 +168,7 @@ export default function Assistant() {
     };
   };
 
-  // Upload de foto + OCR
+  // ✅ MODIFICADO: Suporta imagem E PDF
   const handleImageUpload = async (file: File) => {
     if (!file) return;
     setIsLoading(true);
@@ -192,6 +214,16 @@ export default function Assistant() {
               <p className="text-muted-foreground text-sm max-w-md mb-6">
                 Posso analisar seus gastos, dar conselhos e até registrar despesas por você. Tente perguntar algo!
               </p>
+
+              {/* ✅ NOVO: Botão de importar fatura no estado vazio */}
+              <button
+                onClick={() => setShowInvoiceImport(true)}
+                className="mb-4 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
+              >
+                <CreditCard className="w-4 h-4" />
+                Importar Fatura do Cartão
+              </button>
+
               <div className="flex flex-wrap gap-2 justify-center max-w-lg">
                 {suggestions.map((s, i) => (
                   <button key={i} onClick={() => sendMessage(s)}
@@ -258,11 +290,23 @@ export default function Assistant() {
               {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
             </Button>
 
-            {/* Botão de foto com emoji 📷 */}
+            {/* Botão de foto (comprovante rápido) */}
             <input type="file" accept="image/*" onChange={e => e.target.files && handleImageUpload(e.target.files[0])} className="hidden" id="upload-photo" />
-            <label htmlFor="upload-photo" className="cursor-pointer px-3 py-2 rounded-lg bg-secondary border border-border text-lg flex items-center justify-center">
+            <label htmlFor="upload-photo" className="cursor-pointer px-3 py-2 rounded-lg bg-secondary border border-border text-lg flex items-center justify-center" title="Enviar comprovante">
               📷
             </label>
+
+            {/* ✅ NOVO: Botão de importar fatura */}
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={() => setShowInvoiceImport(true)}
+              title="Importar fatura do cartão"
+              className="shrink-0"
+            >
+              <CreditCard className="w-4 h-4" />
+            </Button>
 
             <Input value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder={isRecording ? 'Ouvindo...' : 'Digite sua mensagem...'} className="bg-secondary border-border" disabled={isLoading || isRecording} />
             <Button onClick={() => sendMessage(input)} disabled={!input.trim() || isLoading} className="gradient-primary shrink-0" size="icon">
@@ -274,6 +318,16 @@ export default function Assistant() {
           </div>
         </div>
       </Card>
+
+      {/* ✅ NOVO: Dialog de importação de fatura */}
+      <Dialog open={showInvoiceImport} onOpenChange={setShowInvoiceImport}>
+        <DialogContent className="bg-card border-border max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Importar Fatura do Cartão</DialogTitle>
+          </DialogHeader>
+          <InvoiceImport />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
