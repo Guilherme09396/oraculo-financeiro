@@ -1,15 +1,3 @@
-/**
- * Expenses_MODIFIED.tsx
- *
- * INSTRUÇÕES: Este arquivo substitui seu Expenses.tsx atual.
- * As únicas mudanças em relação ao original são:
- *  1. Import do ícone `FileUp` do lucide-react
- *  2. Botão "Importar Fatura" no header que abre o InvoiceImport em um Dialog
- *  3. Import do componente InvoiceImport
- *
- * Copie este conteúdo para o seu src/pages/Expenses.tsx
- */
-
 import { useState } from 'react';
 import { useTransactions, useCreateTransaction, useDeleteTransaction, useUpdateTransaction } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
@@ -23,16 +11,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import MonthSelector from '@/components/MonthSelector';
 import ReceiptPreviewDialog from '@/components/ReceiptPreviewDialog';
-// ✅ NOVO: Import do componente de importação de fatura
 import InvoiceImport from '@/pages/InvoiceImport';
+import ExpensePhotoImport from '@/pages/ExpensePhotoImport';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
-// ✅ NOVO: Adicionado FileUp
-import { Plus, TrendingDown, Pencil, Trash2, FileText, FileUp } from 'lucide-react';
+import { Plus, TrendingDown, Pencil, Trash2, FileText, FileUp, Camera } from 'lucide-react';
 import { toast } from 'sonner';
 
 function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: () => void }) {
@@ -109,8 +96,10 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
           <Select value={paymentMethod} onValueChange={(v) => { setPaymentMethod(v); if (v !== 'credit_card') setCardId(''); }}>
             <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="pix">PIX</SelectItem><SelectItem value="credit_card">Cartão de Crédito</SelectItem>
-              <SelectItem value="debit_card">Cartão de Débito</SelectItem><SelectItem value="cash">Dinheiro</SelectItem>
+              <SelectItem value="pix">PIX</SelectItem>
+              <SelectItem value="credit_card">Cartão de Crédito</SelectItem>
+              <SelectItem value="debit_card">Cartão de Débito</SelectItem>
+              <SelectItem value="cash">Dinheiro</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -166,8 +155,8 @@ export default function Expenses() {
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
-  // ✅ NOVO: estado para o dialog de importação de fatura
   const [showInvoiceImport, setShowInvoiceImport] = useState(false);
+  const [showPhotoImport, setShowPhotoImport] = useState(false);
 
   const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
@@ -181,39 +170,71 @@ export default function Expenses() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      {/* Header */}
+      <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-foreground">Despesas</h1>
           <p className="text-sm text-muted-foreground">Todos os seus gastos</p>
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+
+        <div className="flex items-center gap-2 flex-wrap">
           <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
 
-          {/* ✅ NOVO: Botão Importar Fatura */}
+          {/* Importar Fatura (cartão de crédito - PDF/imagem) */}
           <Dialog open={showInvoiceImport} onOpenChange={setShowInvoiceImport}>
             <DialogTrigger asChild>
-              <Button variant="outline" className="gap-2">
-                <FileUp className="w-4 h-4" />
-                <span className="hidden sm:inline">Importar Fatura</span>
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs sm:text-sm">
+                <FileUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="hidden xs:inline">Importar</span>
+                <span className="hidden sm:inline"> Fatura</span>
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-card border-border max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="bg-card border-border w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Importar Fatura do Cartão</DialogTitle>
+                <DialogTitle className="flex items-center gap-2">
+                  <FileUp className="w-4 h-4 text-primary" /> Importar Fatura do Cartão
+                </DialogTitle>
               </DialogHeader>
               <InvoiceImport />
             </DialogContent>
           </Dialog>
 
+          {/* Importar via Foto (Pix, débito, boleto, etc.) */}
+          <Dialog open={showPhotoImport} onOpenChange={setShowPhotoImport}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs sm:text-sm">
+                <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="hidden xs:inline">Importar</span>
+                <span className="hidden sm:inline"> por Foto</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-card border-border w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-primary" /> Importar Despesas por Foto
+                </DialogTitle>
+              </DialogHeader>
+              <ExpensePhotoImport />
+            </DialogContent>
+          </Dialog>
+
+          {/* Nova Despesa */}
           <Dialog open={showCreate} onOpenChange={setShowCreate}>
-            <DialogTrigger asChild><Button className="gradient-primary gap-2"><Plus className="w-4 h-4" /> <span className="hidden sm:inline">Nova Despesa</span></Button></DialogTrigger>
-            <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>Nova Despesa</DialogTitle></DialogHeader>
+            <DialogTrigger asChild>
+              <Button className="gradient-primary gap-1.5 text-xs sm:text-sm" size="sm">
+                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="hidden sm:inline">Nova </span>Despesa
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto">
+              <DialogHeader><DialogTitle>Nova Despesa</DialogTitle></DialogHeader>
               <ExpenseDialog onClose={() => setShowCreate(false)} />
             </DialogContent>
           </Dialog>
         </div>
       </div>
 
+      {/* Filtros e totais */}
       <div className="flex items-center gap-4 flex-wrap">
         <Card className="p-4 sm:p-5 bg-card border-border flex-1 min-w-[200px]">
           <p className="text-sm text-muted-foreground">Total de Despesas</p>
@@ -221,7 +242,9 @@ export default function Expenses() {
           <p className="text-sm text-muted-foreground mt-1">{filtered.length} lançamento(s)</p>
         </Card>
         <Select value={filterCategory} onValueChange={setFilterCategory}>
-          <SelectTrigger className="w-[160px] sm:w-[180px] bg-secondary border-border"><SelectValue placeholder="Categoria" /></SelectTrigger>
+          <SelectTrigger className="w-[160px] sm:w-[180px] bg-secondary border-border">
+            <SelectValue placeholder="Categoria" />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas categorias</SelectItem>
             {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>)}
@@ -229,40 +252,52 @@ export default function Expenses() {
         </Select>
       </div>
 
+      {/* Lista de despesas */}
       <Card className="bg-card border-border overflow-hidden">
-        {isLoading ? <div className="p-8 text-center text-muted-foreground">Carregando...</div>
-        : filtered.length === 0 ? <div className="p-8 sm:p-12 text-center text-muted-foreground">Nenhuma despesa neste período</div>
-        : <div className="divide-y divide-border">
-            {filtered.map((t: any) => (
-              <div key={t.id} className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 hover:bg-secondary/50 transition-colors gap-2">
-                <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-expense/15 flex items-center justify-center shrink-0"><TrendingDown className="w-4 h-4 sm:w-5 sm:h-5 text-expense" /></div>
-                  <div className="min-w-0">
-                    <p className="font-medium text-foreground text-sm sm:text-base truncate">{t.description}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {formatDate(t.date)} · {(t as any).categories?.name || 'Sem categoria'}
-                      {t.is_third_party && (<> · 👤 {t.third_party_name}</>)}
-                      {t.payment_method === 'credit_card' && ' · 💳 Cartão'}
-                    </p>
+        {isLoading
+          ? <div className="p-8 text-center text-muted-foreground">Carregando...</div>
+          : filtered.length === 0
+            ? <div className="p-8 sm:p-12 text-center text-muted-foreground">Nenhuma despesa neste período</div>
+            : <div className="divide-y divide-border">
+                {filtered.map((t: any) => (
+                  <div key={t.id} className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 hover:bg-secondary/50 transition-colors gap-2">
+                    <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-expense/15 flex items-center justify-center shrink-0">
+                        <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5 text-expense" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground text-sm sm:text-base truncate">{t.description}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {formatDate(t.date)} · {(t as any).categories?.name || 'Sem categoria'}
+                          {t.is_third_party && <> · 👤 {t.third_party_name}</>}
+                          {t.payment_method === 'credit_card' && ' · 💳 Cartão'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                      <span className="font-mono font-semibold text-expense text-sm">-{formatCurrency(Number(t.amount))}</span>
+                      {(t as any).receipt_url && (
+                        <Button variant="ghost" size="icon" onClick={() => setPreviewReceipt((t as any).receipt_url)} className="h-8 w-8" title="Ver comprovante">
+                          <FileText className="w-3.5 h-3.5 text-primary" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon" onClick={() => setEditing(t)} className="h-8 w-8">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => deleteTransaction.mutate(t.id)} className="h-8 w-8 hover:text-destructive hidden sm:flex">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-                  <span className="font-mono font-semibold text-expense text-sm">-{formatCurrency(Number(t.amount))}</span>
-                  {(t as any).receipt_url && (
-                    <Button variant="ghost" size="icon" onClick={() => setPreviewReceipt((t as any).receipt_url)} className="h-8 w-8" title="Ver comprovante">
-                      <FileText className="w-3.5 h-3.5 text-primary" />
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="icon" onClick={() => setEditing(t)} className="h-8 w-8"><Pencil className="w-3.5 h-3.5" /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => deleteTransaction.mutate(t.id)} className="h-8 w-8 hover:text-destructive hidden sm:flex"><Trash2 className="w-3.5 h-3.5" /></Button>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>}
+        }
       </Card>
 
+      {/* Dialog edição */}
       <Dialog open={!!editing} onOpenChange={open => !open && setEditing(null)}>
-        <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto"><DialogHeader><DialogTitle>Editar Despesa</DialogTitle></DialogHeader>
+        <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Editar Despesa</DialogTitle></DialogHeader>
           {editing && <ExpenseDialog transaction={editing} onClose={() => setEditing(null)} />}
         </DialogContent>
       </Dialog>

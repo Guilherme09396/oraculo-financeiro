@@ -20,6 +20,8 @@ import Cards from "@/pages/Cards";
 import SettingsPage from "@/pages/Settings";
 import NotFound from "./pages/NotFound";
 import InvoiceImport from "./pages/InvoiceImport";
+import ExpensePhotoImport from "./pages/ExpensePhotoImport";
+
 
 const queryClient = new QueryClient();
 
@@ -63,6 +65,7 @@ const App = () => (
                                 path="/invoice-import"
                                 element={<InvoiceImport />}
                             />
+                            <Route path="/expense-photo-import" element={<ExpensePhotoImport />} />
                             <Route
                                 path="/settings"
                                 element={<SettingsPage />}
