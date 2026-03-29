@@ -1,30 +1,6 @@
 /**
- * InvoiceImport.tsx
- *
- * Componente para importar fatura de cartão de crédito via PDF ou imagem.
- * A IA analisa a fatura, identifica o mês de referência (ex: vencimento 15/03 → mês fev)
- * e sugere as transações com categorias automáticas para o usuário confirmar e salvar.
- *
- * COMO USAR:
- * 1. Copie este arquivo para sua pasta src/pages/ (ou src/components/)
- * 2. No seu App.tsx (ou roteador), adicione a rota:
- *      import InvoiceImport from "@/pages/InvoiceImport";
- *      <Route path="/invoice-import" element={<InvoiceImport />} />
- * 3. Certifique-se de ter a edge function "ai-chat" no Supabase configurada para aceitar
- *    o campo `invoiceText` no body e retornar JSON estruturado (veja comentário abaixo).
- * 4. Instale o pdfjs-dist se quiser leitura de PDF via browser:
- *      npm install pdfjs-dist
- *    OU use apenas imagem (o componente já suporta os dois modos).
- *
- * EDGE FUNCTION (ai-chat) — adicione este case:
- *   Se o body contiver `invoiceText`, chame a IA pedindo para retornar JSON como:
- *   {
- *     referenceMonth: number,  // 1-12
- *     referenceYear: number,
- *     transactions: [
- *       { description: string, amount: number, date: string (YYYY-MM-DD), category: string }
- *     ]
- *   }
+ * InvoiceImport - Importar fatura de cartão de crédito via PDF ou imagem.
+ * Versão com responsividade mobile aprimorada.
  */
 
 import { useState, useRef } from "react";
@@ -45,14 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Upload,
-  FileText,
   Sparkles,
   CheckCircle2,
   XCircle,
@@ -61,7 +30,6 @@ import {
   Calendar,
   AlertCircle,
   Trash2,
-  Download,
   Printer,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -69,9 +37,7 @@ import { formatCurrency } from "@/lib/format";
 import Tesseract from "tesseract.js";
 
 // ─── Mapeamento de categorias da IA → IDs do seu sistema ──────────────────────
-// Ajuste as chaves conforme as categorias retornadas pela sua IA
-// e os nomes conforme suas categorias cadastradas no banco.
-const CATEGORY_KEYWORD_MAP: Record<string, string[]> = {
+const CATEGORY_KEYWORD_MAP = {
   Alimentação: ["restaurante", "lanchonete", "padaria", "bar", "café", "food", "ifood", "delivery", "pizza", "hamburguer"],
   Mercado: ["mercado", "supermercado", "hortifruti", "atacado", "carrefour", "extra", "pão de açúcar"],
   Transporte: ["uber", "99", "taxi", "combustivel", "gasolina", "estacionamento", "pedágio", "onibus", "metro"],
@@ -83,29 +49,10 @@ const CATEGORY_KEYWORD_MAP: Record<string, string[]> = {
   Viagem: ["hotel", "airbnb", "passagem", "aeroporto", "voo", "latam", "gol"],
 };
 
-interface ParsedTransaction {
-  id: string;
-  description: string;
-  amount: number;
-  date: string;
-  suggestedCategory: string;
-  categoryId: string;
-  selected: boolean;
-  editing: boolean;
-}
-
-interface InvoiceResult {
-  referenceMonth: number;
-  referenceYear: number;
-  transactions: ParsedTransaction[];
-}
-
 // ─── Funções auxiliares ────────────────────────────────────────────────────────
 
-function inferMonthFromDueDate(dueDateStr: string): { month: number; year: number } {
-  // Tenta extrair vencimento do texto da fatura
-  // Formato: "15/03/2025", "15/03", "15 de março de 2025"
-  const monthNames: Record<string, number> = {
+function inferMonthFromDueDate(dueDateStr) {
+  const monthNames = {
     janeiro: 1, fevereiro: 2, março: 3, abril: 4, maio: 5, junho: 6,
     julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12,
   };
@@ -113,7 +60,6 @@ function inferMonthFromDueDate(dueDateStr: string): { month: number; year: numbe
   const now = new Date();
   let day = 0, month = 0, year = now.getFullYear();
 
-  // Tenta dd/mm/yyyy ou dd/mm
   const dmyMatch = dueDateStr.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
   if (dmyMatch) {
     day = parseInt(dmyMatch[1]);
@@ -121,7 +67,6 @@ function inferMonthFromDueDate(dueDateStr: string): { month: number; year: numbe
     year = dmyMatch[3] ? parseInt(dmyMatch[3]) : year;
   }
 
-  // Tenta "15 de março de 2025"
   const ptMatch = dueDateStr.match(/(\d{1,2})\s+de\s+(\w+)(?:\s+de\s+(\d{4}))?/i);
   if (ptMatch && !dmyMatch) {
     day = parseInt(ptMatch[1]);
@@ -132,14 +77,13 @@ function inferMonthFromDueDate(dueDateStr: string): { month: number; year: numbe
 
   if (!month) return { month: now.getMonth() + 1, year: now.getFullYear() };
 
-  // Fatura refere-se ao mês anterior ao vencimento (se dia >= 10)
   const refMonth = day >= 10 ? (month === 1 ? 12 : month - 1) : month;
   const refYear = day >= 10 && month === 1 ? year - 1 : year;
 
   return { month: refMonth, year: refYear };
 }
 
-function guessCategory(description: string, categories: any[]): string {
+function guessCategory(description, categories) {
   const lower = description.toLowerCase();
   for (const [catName, keywords] of Object.entries(CATEGORY_KEYWORD_MAP)) {
     if (keywords.some((kw) => lower.includes(kw))) {
@@ -152,7 +96,7 @@ function guessCategory(description: string, categories: any[]): string {
   return "";
 }
 
-function formatRefMonth(month: number, year: number): string {
+function formatRefMonth(month, year) {
   const names = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
   return `${names[month - 1]}/${year}`;
 }
@@ -160,12 +104,12 @@ function formatRefMonth(month: number, year: number): string {
 // ─── Componente principal ──────────────────────────────────────────────────────
 
 export default function InvoiceImport() {
-  const [step, setStep] = useState<"upload" | "processing" | "review" | "done">("upload");
-  const [invoiceResult, setInvoiceResult] = useState<InvoiceResult | null>(null);
+  const [step, setStep] = useState("upload");
+  const [invoiceResult, setInvoiceResult] = useState(null);
   const [selectedCard, setSelectedCard] = useState("");
   const [dragging, setDragging] = useState(false);
   const [processingMsg, setProcessingMsg] = useState("Analisando fatura...");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef(null);
   const qc = useQueryClient();
 
   const { data: categories = [] } = useCategories("expense");
@@ -178,8 +122,7 @@ export default function InvoiceImport() {
     },
   });
 
-  // ── Extrai texto da imagem via Tesseract ───────────────────────────────────
-  async function extractTextFromImage(file: File): Promise<string> {
+  async function extractTextFromImage(file) {
     setProcessingMsg("Lendo imagem com OCR...");
     const { data: { text } } = await Tesseract.recognize(file, "por", {
       logger: (m) => {
@@ -191,14 +134,12 @@ export default function InvoiceImport() {
     return text;
   }
 
-  // ── Converte página do PDF em imagem (canvas) e aplica OCR ───────────────
-  async function extractTextFromPDF(file: File): Promise<string> {
+  async function extractTextFromPDF(file) {
     setProcessingMsg("Carregando PDF...");
 
-    // Carrega pdfjs via CDN para não depender de instalação local
     const PDFJS_VERSION = "3.11.174";
-    if (!(window as any).pdfjsLib) {
-      await new Promise<void>((resolve, reject) => {
+    if (!window.pdfjsLib) {
+      await new Promise((resolve, reject) => {
         const script = document.createElement("script");
         script.src = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.js`;
         script.onload = () => resolve();
@@ -207,31 +148,28 @@ export default function InvoiceImport() {
       });
     }
 
-    const pdfjsLib = (window as any).pdfjsLib;
+    const pdfjsLib = window.pdfjsLib;
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
 
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     let fullText = "";
 
-    // Primeiro tenta extrair texto nativo (PDFs digitais)
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items.map((item: any) => item.str).join(" ").trim();
+      const pageText = content.items.map((item) => item.str).join(" ").trim();
       fullText += pageText + "\n";
     }
 
-    // Se o PDF tem texto nativo suficiente, retorna direto (sem OCR)
     if (fullText.trim().length > 100) {
       setProcessingMsg("Texto extraído do PDF...");
       return fullText;
     }
 
-    // PDF é imagem (scan) → renderiza cada página em canvas e faz OCR
     setProcessingMsg("PDF escaneado, aplicando OCR...");
     fullText = "";
-    const scale = 2.0; // maior resolução = melhor OCR
+    const scale = 2.0;
 
     for (let i = 1; i <= pdf.numPages; i++) {
       setProcessingMsg(`OCR página ${i} de ${pdf.numPages}...`);
@@ -241,13 +179,12 @@ export default function InvoiceImport() {
       const canvas = document.createElement("canvas");
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      const ctx = canvas.getContext("2d")!;
+      const ctx = canvas.getContext("2d");
 
       await page.render({ canvasContext: ctx, viewport }).promise;
 
-      // Converte canvas em blob e passa para o Tesseract
-      const blob = await new Promise<Blob>((resolve) =>
-        canvas.toBlob((b) => resolve(b!), "image/png")
+      const blob = await new Promise((resolve) =>
+        canvas.toBlob((b) => resolve(b), "image/png")
       );
 
       const { data: { text } } = await Tesseract.recognize(blob, "por", {
@@ -264,11 +201,9 @@ export default function InvoiceImport() {
     return fullText;
   }
 
-  // ── Chama a IA para interpretar o texto da fatura ─────────────────────────
-  async function analyzeInvoiceWithAI(invoiceText: string): Promise<InvoiceResult | null> {
+  async function analyzeInvoiceWithAI(invoiceText) {
     setProcessingMsg("Consultando inteligência artificial...");
 
-    // Prompt para a IA retornar JSON estruturado
     const prompt = `Você é um assistente financeiro. Analise o texto desta fatura de cartão de crédito e retorne APENAS um JSON válido (sem markdown, sem explicações) com a seguinte estrutura:
 {
   "dueDate": "DD/MM/YYYY",
@@ -295,64 +230,53 @@ Regras:
 Texto da fatura:
 ${invoiceText.slice(0, 8000)}`;
 
-    try {
-      // Chama sua edge function existente
-      const { data, error } = await supabase.functions.invoke("ai-chat", {
-        body: {
-          messages: [{ role: "user", content: prompt }],
-          mode: "invoice", // flag opcional para sua edge function
-        },
-      });
+    const { data, error } = await supabase.functions.invoke("ai-chat", {
+      body: {
+        messages: [{ role: "user", content: prompt }],
+        mode: "invoice",
+      },
+    });
 
-      if (error) throw error;
+    if (error) throw error;
 
-      // Tenta parsear o JSON da resposta
-      const responseText = data?.message || data?.content || "";
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("IA não retornou JSON válido");
+    const responseText = data?.message || data?.content || "";
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("IA não retornou JSON válido");
 
-      const parsed = JSON.parse(jsonMatch[0]);
+    const parsed = JSON.parse(jsonMatch[0]);
 
-      // Infere o mês de referência a partir do vencimento se não veio
-      let { referenceMonth, referenceYear } = parsed;
-      if (!referenceMonth && parsed.dueDate) {
-        const inferred = inferMonthFromDueDate(parsed.dueDate);
-        referenceMonth = inferred.month;
-        referenceYear = inferred.year;
-      }
-      referenceYear = referenceYear || new Date().getFullYear();
-
-      const transactions: ParsedTransaction[] = (parsed.transactions || []).map(
-        (t: any, idx: number) => {
-          // Tenta encontrar a categoria pelo nome retornado pela IA primeiro,
-          // depois cai para a busca por palavras-chave na descrição
-          const categoryByAIName = categories.find(
-            (c: any) => c.name.toLowerCase() === (t.category || "").toLowerCase()
-          );
-          const categoryId = categoryByAIName?.id || guessCategory(t.description || "", categories);
-
-          return {
-            id: crypto.randomUUID(),
-            description: t.description || `Transação ${idx + 1}`,
-            amount: Number(t.amount) || 0,
-            date: t.date || `${referenceYear}-${String(referenceMonth).padStart(2, "0")}-15`,
-            suggestedCategory: t.category || "Outro",
-            categoryId,
-            selected: true,
-            editing: false,
-          };
-        }
-      );
-
-      return { referenceMonth, referenceYear, transactions };
-    } catch (e: any) {
-      console.error("Erro IA:", e);
-      throw new Error("Não consegui interpretar a fatura. Tente uma imagem mais clara.");
+    let { referenceMonth, referenceYear } = parsed;
+    if (!referenceMonth && parsed.dueDate) {
+      const inferred = inferMonthFromDueDate(parsed.dueDate);
+      referenceMonth = inferred.month;
+      referenceYear = inferred.year;
     }
+    referenceYear = referenceYear || new Date().getFullYear();
+
+    const transactions = (parsed.transactions || []).map(
+      (t, idx) => {
+        const categoryByAIName = categories.find(
+          (c) => c.name.toLowerCase() === (t.category || "").toLowerCase()
+        );
+        const categoryId = categoryByAIName?.id || guessCategory(t.description || "", categories);
+
+        return {
+          id: crypto.randomUUID(),
+          description: t.description || `Transação ${idx + 1}`,
+          amount: Number(t.amount) || 0,
+          date: t.date || `${referenceYear}-${String(referenceMonth).padStart(2, "0")}-15`,
+          suggestedCategory: t.category || "Outro",
+          categoryId,
+          selected: true,
+          editing: false,
+        };
+      }
+    );
+
+    return { referenceMonth, referenceYear, transactions };
   }
 
-  // ── Processa o arquivo enviado ─────────────────────────────────────────────
-  async function processFile(file: File) {
+  async function processFile(file) {
     if (!file) return;
 
     const validTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
@@ -380,13 +304,12 @@ ${invoiceText.slice(0, 8000)}`;
 
       setInvoiceResult(result);
       setStep("review");
-    } catch (e: any) {
+    } catch (e) {
       toast.error(e.message || "Erro ao processar fatura");
       setStep("upload");
     }
   }
 
-  // ── Salva as transações selecionadas ──────────────────────────────────────
   async function saveTransactions() {
     if (!invoiceResult) return;
 
@@ -425,13 +348,11 @@ ${invoiceText.slice(0, 8000)}`;
     setStep("done");
   }
 
-  // ── Print / Export PDF da fatura revisada ────────────────────────────────
   function handlePrint() {
     window.print();
   }
 
-  // ── Atualiza campo de transação ───────────────────────────────────────────
-  function updateTransaction(id: string, field: keyof ParsedTransaction, value: any) {
+  function updateTransaction(id, field, value) {
     setInvoiceResult((prev) =>
       prev
         ? {
@@ -444,11 +365,11 @@ ${invoiceText.slice(0, 8000)}`;
     );
   }
 
-  function toggleSelect(id: string) {
+  function toggleSelect(id) {
     updateTransaction(id, "selected", !invoiceResult?.transactions.find((t) => t.id === id)?.selected);
   }
 
-  function removeTransaction(id: string) {
+  function removeTransaction(id) {
     setInvoiceResult((prev) =>
       prev ? { ...prev, transactions: prev.transactions.filter((t) => t.id !== id) } : prev
     );
@@ -459,19 +380,19 @@ ${invoiceText.slice(0, 8000)}`;
     .filter((t) => t.selected)
     .reduce((s, t) => s + t.amount, 0) || 0;
 
-  // ─── RENDER ────────────────────────────────────────────────────────────────
+  // ─── TELA: CONCLUÍDO ────────────────────────────────────────────────────────
 
   if (step === "done") {
     return (
-      <div className="max-w-lg mx-auto py-16 text-center space-y-4">
-        <div className="w-20 h-20 rounded-full bg-green-500/15 flex items-center justify-center mx-auto">
-          <CheckCircle2 className="w-10 h-10 text-green-500" />
+      <div className="max-w-lg mx-auto px-4 py-12 sm:py-16 text-center space-y-4">
+        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-green-500/15 flex items-center justify-center mx-auto">
+          <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10 text-green-500" />
         </div>
-        <h2 className="text-2xl font-bold text-foreground">Fatura importada!</h2>
-        <p className="text-muted-foreground">
+        <h2 className="text-xl sm:text-2xl font-bold text-foreground">Fatura importada!</h2>
+        <p className="text-muted-foreground text-sm">
           {selectedCount} transação(ões) foram salvas em Despesas.
         </p>
-        <div className="flex gap-3 justify-center pt-4">
+        <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
           <Button variant="outline" onClick={() => { setStep("upload"); setInvoiceResult(null); }}>
             Importar outra fatura
           </Button>
@@ -483,45 +404,50 @@ ${invoiceText.slice(0, 8000)}`;
     );
   }
 
+  // ─── TELA: PROCESSANDO ──────────────────────────────────────────────────────
+
   if (step === "processing") {
     return (
-      <div className="max-w-lg mx-auto py-24 text-center space-y-6">
-        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-          <Loader2 className="w-10 h-10 text-primary animate-spin" />
+      <div className="max-w-lg mx-auto px-4 py-16 sm:py-24 text-center space-y-6">
+        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+          <Loader2 className="w-8 h-8 sm:w-10 sm:h-10 text-primary animate-spin" />
         </div>
-        <h2 className="text-xl font-bold text-foreground">{processingMsg}</h2>
-        <p className="text-muted-foreground text-sm">
+        <h2 className="text-lg sm:text-xl font-bold text-foreground">{processingMsg}</h2>
+        <p className="text-muted-foreground text-sm px-4">
           Estamos analisando sua fatura com inteligência artificial.<br />Isso pode levar alguns segundos.
         </p>
       </div>
     );
   }
 
+  // ─── TELA: REVISÃO ─────────────────────────────────────────────────────────
+
   if (step === "review" && invoiceResult) {
     return (
-      <div className="space-y-6 print:space-y-4">
+      <div className="space-y-4 sm:space-y-6 px-2 sm:px-0 print:space-y-4">
         {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-4 print:hidden">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-primary" />
-              Revisão da Fatura
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2">
+              <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-primary shrink-0" />
+              <span className="truncate">Revisão da Fatura</span>
             </h1>
-            <p className="text-muted-foreground text-sm">
+            <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">
               Fatura de{" "}
               <span className="font-semibold text-foreground">
                 {formatRefMonth(invoiceResult.referenceMonth, invoiceResult.referenceYear)}
               </span>{" "}
-              · {invoiceResult.transactions.length} item(ns) encontrados
+              · {invoiceResult.transactions.length} item(ns)
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handlePrint} className="gap-2">
-              <Printer className="w-4 h-4" /> Imprimir
+          <div className="flex gap-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1.5 text-xs sm:text-sm">
+              <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Imprimir
             </Button>
             <Button
               variant="outline"
               size="sm"
+              className="text-xs sm:text-sm"
               onClick={() => { setStep("upload"); setInvoiceResult(null); }}
             >
               ← Voltar
@@ -531,17 +457,19 @@ ${invoiceText.slice(0, 8000)}`;
 
         {/* Cartão seletor */}
         {cards && cards.length > 0 && (
-          <Card className="p-4 bg-card border-border print:hidden">
-            <div className="flex items-center gap-3 flex-wrap">
-              <CreditCard className="w-5 h-5 text-muted-foreground" />
-              <Label className="text-sm font-medium">Vincular ao cartão:</Label>
+          <Card className="p-3 sm:p-4 bg-card border-border print:hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground shrink-0" />
+                <Label className="text-xs sm:text-sm font-medium whitespace-nowrap">Vincular ao cartão:</Label>
+              </div>
               <Select value={selectedCard} onValueChange={setSelectedCard}>
-                <SelectTrigger className="w-48 bg-secondary border-border">
+                <SelectTrigger className="w-full sm:w-48 bg-secondary border-border text-sm">
                   <SelectValue placeholder="Selecione (opcional)" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={null}>Nenhum</SelectItem>
-                  {cards.map((c: any) => (
+                  {cards.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       💳 {c.name}
                     </SelectItem>
@@ -553,18 +481,18 @@ ${invoiceText.slice(0, 8000)}`;
         )}
 
         {/* Sumário */}
-        <div className="grid grid-cols-3 gap-3">
-          <Card className="p-3 bg-card border-border text-center">
-            <p className="text-xs text-muted-foreground">Selecionadas</p>
-            <p className="text-xl font-bold text-foreground">{selectedCount}</p>
+        <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          <Card className="p-2 sm:p-3 bg-card border-border text-center">
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Selecionadas</p>
+            <p className="text-base sm:text-xl font-bold text-foreground">{selectedCount}</p>
           </Card>
-          <Card className="p-3 bg-card border-border text-center">
-            <p className="text-xs text-muted-foreground">Total</p>
-            <p className="text-xl font-bold text-expense">{formatCurrency(selectedTotal)}</p>
+          <Card className="p-2 sm:p-3 bg-card border-border text-center">
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Total</p>
+            <p className="text-sm sm:text-xl font-bold text-expense truncate">{formatCurrency(selectedTotal)}</p>
           </Card>
-          <Card className="p-3 bg-card border-border text-center">
-            <p className="text-xs text-muted-foreground">Mês Ref.</p>
-            <p className="text-xl font-bold text-foreground">
+          <Card className="p-2 sm:p-3 bg-card border-border text-center">
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Mês Ref.</p>
+            <p className="text-sm sm:text-xl font-bold text-foreground">
               {formatRefMonth(invoiceResult.referenceMonth, invoiceResult.referenceYear)}
             </p>
           </Card>
@@ -572,13 +500,13 @@ ${invoiceText.slice(0, 8000)}`;
 
         {/* Lista de transações */}
         <Card className="bg-card border-border overflow-hidden">
-          <div className="px-5 py-3 border-b border-border flex items-center justify-between">
-            <span className="font-semibold text-sm text-foreground">Transações detectadas</span>
-            <div className="flex gap-2">
+          <div className="px-3 sm:px-5 py-2.5 sm:py-3 border-b border-border flex items-center justify-between gap-2">
+            <span className="font-semibold text-xs sm:text-sm text-foreground whitespace-nowrap">Transações detectadas</span>
+            <div className="flex gap-1 sm:gap-2">
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-xs"
+                className="text-[10px] sm:text-xs h-7 px-2"
                 onClick={() =>
                   setInvoiceResult((prev) =>
                     prev
@@ -592,7 +520,7 @@ ${invoiceText.slice(0, 8000)}`;
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-xs"
+                className="text-[10px] sm:text-xs h-7 px-2"
                 onClick={() =>
                   setInvoiceResult((prev) =>
                     prev
@@ -601,7 +529,7 @@ ${invoiceText.slice(0, 8000)}`;
                   )
                 }
               >
-                Desmarcar tudo
+                Desmarcar
               </Button>
             </div>
           </div>
@@ -610,104 +538,109 @@ ${invoiceText.slice(0, 8000)}`;
             {invoiceResult.transactions.map((t) => (
               <div
                 key={t.id}
-                className={`px-4 py-3 flex items-start gap-3 transition-colors ${
+                className={`px-3 sm:px-4 py-3 sm:py-3 transition-colors ${
                   t.selected ? "bg-card" : "bg-secondary/40 opacity-60"
                 }`}
               >
-                {/* Checkbox */}
-                <button
-                  onClick={() => toggleSelect(t.id)}
-                  className="mt-1 shrink-0"
-                >
-                  {t.selected ? (
-                    <CheckCircle2 className="w-5 h-5 text-green-500" />
-                  ) : (
-                    <XCircle className="w-5 h-5 text-muted-foreground" />
-                  )}
-                </button>
+                {/* Mobile: layout empilhado */}
+                <div className="flex items-start gap-2 sm:gap-3">
+                  {/* Checkbox */}
+                  <button
+                    onClick={() => toggleSelect(t.id)}
+                    className="mt-1 shrink-0 touch-manipulation"
+                  >
+                    {t.selected ? (
+                      <CheckCircle2 className="w-5 h-5 text-green-500" />
+                    ) : (
+                      <XCircle className="w-5 h-5 text-muted-foreground" />
+                    )}
+                  </button>
 
-                {/* Detalhes */}
-                <div className="flex-1 min-w-0 space-y-2">
-                  <div className="flex items-start justify-between gap-2 flex-wrap">
-                    <Input
-                      value={t.description}
-                      onChange={(e) => updateTransaction(t.id, "description", e.target.value)}
-                      className="bg-secondary border-border text-sm font-medium h-8 flex-1 min-w-[160px]"
-                    />
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-expense font-mono font-semibold text-sm">
+                  {/* Detalhes */}
+                  <div className="flex-1 min-w-0 space-y-2">
+                    {/* Linha 1: Descrição + Valor */}
+                    <div className="flex items-start justify-between gap-2">
+                      <Input
+                        value={t.description}
+                        onChange={(e) => updateTransaction(t.id, "description", e.target.value)}
+                        className="bg-secondary border-border text-xs sm:text-sm font-medium h-8 flex-1 min-w-0"
+                      />
+                      <span className="text-expense font-mono font-semibold text-xs sm:text-sm shrink-0 mt-1.5">
                         -{formatCurrency(t.amount)}
                       </span>
                     </div>
+
+                    {/* Linha 2: Campos de edição - empilha no mobile */}
+                    <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2 sm:flex-wrap">
+                      {/* Valor */}
+                      <div className="flex items-center gap-1">
+                        <Label className="text-[10px] sm:text-xs text-muted-foreground">R$</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={t.amount}
+                          onChange={(e) => updateTransaction(t.id, "amount", parseFloat(e.target.value) || 0)}
+                          className="bg-secondary border-border text-xs h-7 w-full sm:w-24"
+                        />
+                      </div>
+
+                      {/* Data */}
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-muted-foreground shrink-0" />
+                        <Input
+                          type="date"
+                          value={t.date}
+                          onChange={(e) => updateTransaction(t.id, "date", e.target.value)}
+                          className="bg-secondary border-border text-xs h-7 w-full sm:w-36"
+                        />
+                      </div>
+
+                      {/* Categoria */}
+                      <div className="col-span-2 sm:col-span-1">
+                        <Select
+                          value={t.categoryId}
+                          onValueChange={(v) => updateTransaction(t.id, "categoryId", v)}
+                        >
+                          <SelectTrigger className="bg-secondary border-border h-7 text-xs w-full sm:w-40">
+                            <SelectValue placeholder="Categoria" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={null}>Sem categoria</SelectItem>
+                            {categories.map((c) => (
+                              <SelectItem key={c.id} value={c.id}>
+                                {c.icon} {c.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Badge sugestão IA */}
+                      {t.suggestedCategory && (
+                        <Badge variant="secondary" className="text-[10px] sm:text-xs h-7 flex items-center gap-1 w-fit">
+                          <Sparkles className="w-3 h-3" /> {t.suggestedCategory}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex gap-2 flex-wrap">
-                    {/* Valor */}
-                    <div className="flex items-center gap-1">
-                      <Label className="text-xs text-muted-foreground">R$</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={t.amount}
-                        onChange={(e) => updateTransaction(t.id, "amount", parseFloat(e.target.value) || 0)}
-                        className="bg-secondary border-border text-xs h-7 w-24"
-                      />
-                    </div>
-
-                    {/* Data */}
-                    <div className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3 text-muted-foreground" />
-                      <Input
-                        type="date"
-                        value={t.date}
-                        onChange={(e) => updateTransaction(t.id, "date", e.target.value)}
-                        className="bg-secondary border-border text-xs h-7 w-36"
-                      />
-                    </div>
-
-                    {/* Categoria */}
-                    <Select
-                      value={t.categoryId}
-                      onValueChange={(v) => updateTransaction(t.id, "categoryId", v)}
-                    >
-                      <SelectTrigger className="bg-secondary border-border h-7 text-xs w-40">
-                        <SelectValue placeholder="Categoria" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={null}>Sem categoria</SelectItem>
-                        {categories.map((c: any) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.icon} {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    {/* Badge sugestão IA */}
-                    {t.suggestedCategory && (
-                      <Badge variant="secondary" className="text-xs h-7 flex items-center gap-1">
-                        <Sparkles className="w-3 h-3" /> {t.suggestedCategory}
-                      </Badge>
-                    )}
-                  </div>
+                  {/* Remover */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeTransaction(t.id)}
+                    className="h-7 w-7 hover:text-destructive shrink-0 mt-1 print:hidden touch-manipulation"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
                 </div>
-
-                {/* Remover */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => removeTransaction(t.id)}
-                  className="h-7 w-7 hover:text-destructive shrink-0 mt-1 print:hidden"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </Button>
               </div>
             ))}
           </div>
         </Card>
 
         {/* Aviso */}
-        <div className="flex items-start gap-2 text-sm text-muted-foreground bg-secondary rounded-lg p-3">
+        <div className="flex items-start gap-2 text-xs sm:text-sm text-muted-foreground bg-secondary rounded-lg p-3">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>
             Revise as transações antes de salvar. Você pode editar descrição, valor, data e categoria.
@@ -717,38 +650,38 @@ ${invoiceText.slice(0, 8000)}`;
 
         {/* Botão salvar */}
         <Button
-          className="w-full gradient-primary gap-2 print:hidden"
+          className="w-full gradient-primary gap-2 print:hidden text-sm sm:text-base"
           size="lg"
           onClick={saveTransactions}
           disabled={selectedCount === 0}
         >
-          <CheckCircle2 className="w-5 h-5" />
+          <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
           Salvar {selectedCount} transação(ões) — {formatCurrency(selectedTotal)}
         </Button>
       </div>
     );
   }
 
-  // ── Upload step ──────────────────────────────────────────────────────────
+  // ─── TELA: UPLOAD ──────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-5 sm:space-y-6 max-w-2xl mx-auto px-2 sm:px-0">
       <div>
-        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-          <CreditCard className="w-6 h-6 text-primary" />
+        <h1 className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2">
+          <CreditCard className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
           Importar Fatura
         </h1>
-        <p className="text-muted-foreground text-sm mt-1">
+        <p className="text-muted-foreground text-xs sm:text-sm mt-1">
           Envie um print ou PDF da sua fatura e a IA cadastrará todas as despesas automaticamente
         </p>
       </div>
 
       {/* Drop zone */}
       <div
-        className={`border-2 border-dashed rounded-2xl p-12 text-center transition-colors cursor-pointer ${
+        className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center transition-colors cursor-pointer ${
           dragging
             ? "border-primary bg-primary/5"
-            : "border-border hover:border-primary/50 hover:bg-secondary/50"
+            : "border-border hover:border-primary/50 hover:bg-secondary/50 active:bg-secondary/50"
         }`}
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
@@ -767,16 +700,16 @@ ${invoiceText.slice(0, 8000)}`;
           className="hidden"
           onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])}
         />
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-            <Upload className="w-8 h-8 text-primary" />
+        <div className="flex flex-col items-center gap-3 sm:gap-4">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <Upload className="w-7 h-7 sm:w-8 sm:h-8 text-primary" />
           </div>
           <div>
-            <p className="font-semibold text-foreground text-lg">
+            <p className="font-semibold text-foreground text-base sm:text-lg">
               Arraste sua fatura aqui
             </p>
-            <p className="text-muted-foreground text-sm mt-1">
-              ou clique para selecionar um arquivo
+            <p className="text-muted-foreground text-xs sm:text-sm mt-1">
+              ou toque para selecionar um arquivo
             </p>
           </div>
           <div className="flex gap-2 flex-wrap justify-center">
@@ -790,21 +723,21 @@ ${invoiceText.slice(0, 8000)}`;
       </div>
 
       {/* Como funciona */}
-      <Card className="p-5 bg-card border-border">
-        <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2">
+      <Card className="p-4 sm:p-5 bg-card border-border">
+        <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2 text-sm sm:text-base">
           <Sparkles className="w-4 h-4 text-primary" /> Como funciona
         </h3>
-        <div className="space-y-3">
+        <div className="space-y-2.5 sm:space-y-3">
           {[
             { icon: "📤", text: "Você faz upload de um print ou PDF da sua fatura de cartão" },
             { icon: "🔍", text: "O sistema extrai o texto via OCR (imagens) ou leitura direta (PDF)" },
             { icon: "🤖", text: "A IA identifica cada compra, o valor, a data e infere a categoria" },
-            { icon: "📅", text: "O mês de referência é calculado automaticamente pelo vencimento (ex: vcto 15/03 → fev)" },
+            { icon: "📅", text: "O mês de referência é calculado automaticamente pelo vencimento" },
             { icon: "✅", text: "Você revisa, edita e confirma as transações antes de salvar" },
           ].map((item, i) => (
-            <div key={i} className="flex items-start gap-3">
-              <span className="text-lg shrink-0">{item.icon}</span>
-              <p className="text-sm text-muted-foreground">{item.text}</p>
+            <div key={i} className="flex items-start gap-2.5 sm:gap-3">
+              <span className="text-base sm:text-lg shrink-0">{item.icon}</span>
+              <p className="text-xs sm:text-sm text-muted-foreground">{item.text}</p>
             </div>
           ))}
         </div>
