@@ -19,10 +19,21 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
-import { Plus, TrendingDown, Pencil, Trash2, FileText, FileUp, Camera } from 'lucide-react';
+import {
+  Plus, TrendingDown, Pencil, Trash2, FileText, FileUp, Camera, Search, X
+} from 'lucide-react';
 import { toast } from 'sonner';
 
-function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: () => void }) {
+const PAYMENT_METHOD_LABELS = {
+  pix: 'PIX',
+  credit_card: 'Crédito',
+  debit_card: 'Débito',
+  cash: 'Dinheiro',
+  transfer: 'Transferência',
+  boleto: 'Boleto',
+};
+
+function ExpenseDialog({ transaction, onClose }) {
   const { user } = useAuth();
   const isEditing = !!transaction;
   const [description, setDescription] = useState(transaction?.description || '');
@@ -30,11 +41,11 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
   const [categoryId, setCategoryId] = useState(transaction?.category_id || '');
   const [date, setDate] = useState(transaction?.date || new Date().toLocaleDateString('en-CA'));
   const [paymentMethod, setPaymentMethod] = useState(transaction?.payment_method || '');
-  const [cardId, setCardId] = useState((transaction as any)?.card_id || '');
-  const [receiptUrl, setReceiptUrl] = useState((transaction as any)?.receipt_url || '');
+  const [cardId, setCardId] = useState(transaction?.card_id || '');
+  const [receiptUrl, setReceiptUrl] = useState(transaction?.receipt_url || '');
   const [uploading, setUploading] = useState(false);
-  const [isThirdParty, setIsThirdParty] = useState((transaction as any)?.is_third_party || false);
-  const [thirdPartyName, setThirdPartyName] = useState((transaction as any)?.third_party_name || '');
+  const [isThirdParty, setIsThirdParty] = useState(transaction?.is_third_party || false);
+  const [thirdPartyName, setThirdPartyName] = useState(transaction?.third_party_name || '');
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const { data: categories = [] } = useCategories('expense');
@@ -47,7 +58,7 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
     },
   });
 
-  const handleUpload = async (file: File) => {
+  const handleUpload = async (file) => {
     if (!user) return;
     setUploading(true);
     const path = `${user.id}/${crypto.randomUUID()}.${file.name.split('.').pop()}`;
@@ -57,9 +68,9 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
     setUploading(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    const data: any = {
+    const data = {
       description,
       amount: parseFloat(amount),
       type: 'expense',
@@ -78,10 +89,19 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-2"><Label>Descrição</Label><Input value={description} onChange={e => setDescription(e.target.value)} className="bg-secondary border-border" required /></div>
+      <div className="space-y-2">
+        <Label>Descrição</Label>
+        <Input value={description} onChange={e => setDescription(e.target.value)} className="bg-secondary border-border" required />
+      </div>
       <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2"><Label>Valor</Label><Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="bg-secondary border-border" required /></div>
-        <div className="space-y-2"><Label>Data</Label><Input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-secondary border-border" required /></div>
+        <div className="space-y-2">
+          <Label>Valor</Label>
+          <Input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="bg-secondary border-border" required />
+        </div>
+        <div className="space-y-2">
+          <Label>Data</Label>
+          <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-secondary border-border" required />
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
@@ -100,6 +120,8 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
               <SelectItem value="credit_card">Cartão de Crédito</SelectItem>
               <SelectItem value="debit_card">Cartão de Débito</SelectItem>
               <SelectItem value="cash">Dinheiro</SelectItem>
+              <SelectItem value="transfer">Transferência</SelectItem>
+              <SelectItem value="boleto">Boleto</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -109,9 +131,7 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
           <Label>Qual cartão?</Label>
           <Select value={cardId} onValueChange={setCardId}>
             <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione o cartão" /></SelectTrigger>
-            <SelectContent>
-              {cards.map((c: any) => <SelectItem key={c.id} value={c.id}>💳 {c.name}</SelectItem>)}
-            </SelectContent>
+            <SelectContent>{cards.map((c) => <SelectItem key={c.id} value={c.id}>💳 {c.name}</SelectItem>)}</SelectContent>
           </Select>
         </div>
       )}
@@ -122,7 +142,10 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
             <span className="text-primary text-sm">✅ Comprovante anexado</span>
             <Button type="button" variant="ghost" size="sm" onClick={() => setReceiptUrl('')}>Remover</Button>
           </div>
-        ) : <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />}
+        ) : (
+          <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />
+        )}
+        {uploading && <p className="text-xs text-muted-foreground">Enviando...</p>}
       </div>
       <div className="space-y-2">
         <Label>Essa despesa é de outra pessoa?</Label>
@@ -151,10 +174,13 @@ export default function Expenses() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
+  const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [filterPaymentMethod, setFilterPaymentMethod] = useState('all');
+  const [filterPerson, setFilterPerson] = useState('all');
   const [showCreate, setShowCreate] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
-  const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
+  const [editing, setEditing] = useState(null);
+  const [previewReceipt, setPreviewReceipt] = useState(null);
   const [showInvoiceImport, setShowInvoiceImport] = useState(false);
   const [showPhotoImport, setShowPhotoImport] = useState(false);
 
@@ -165,28 +191,60 @@ export default function Expenses() {
   const { data: categories = [] } = useCategories('expense');
   const deleteTransaction = useDeleteTransaction();
 
-  const filtered = filterCategory === 'all' ? transactions : transactions.filter((t: any) => t.category_id === filterCategory);
-  const total = filtered.reduce((s: number, t: any) => s + Number(t.amount), 0);
+  const thirdPartyNames = Array.from(
+    new Set(
+      transactions
+        .filter((t) => t.is_third_party && t.third_party_name)
+        .map((t) => t.third_party_name),
+    ),
+  ).sort();
+
+  const filtered = transactions.filter((t) => {
+    if (search) {
+      const term = search.toLowerCase();
+      const matchDescription = t.description.toLowerCase().includes(term);
+      const matchPerson = (t.third_party_name || '').toLowerCase().includes(term);
+      if (!matchDescription && !matchPerson) return false;
+    }
+    if (filterCategory !== 'all' && t.category_id !== filterCategory) return false;
+    if (filterPaymentMethod !== 'all' && t.payment_method !== filterPaymentMethod) return false;
+    if (filterPerson === 'mine') {
+      if (t.is_third_party) return false;
+    } else if (filterPerson === 'third_party') {
+      if (!t.is_third_party) return false;
+    } else if (filterPerson !== 'all') {
+      if (t.third_party_name !== filterPerson) return false;
+    }
+    return true;
+  });
+
+  const total = filtered.reduce((s, t) => s + Number(t.amount), 0);
+  const hasActiveFilters = filterPaymentMethod !== 'all' || filterPerson !== 'all' || filterCategory !== 'all' || search !== '';
+
+  function clearAllFilters() {
+    setSearch('');
+    setFilterCategory('all');
+    setFilterPaymentMethod('all');
+    setFilterPerson('all');
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-foreground">Despesas</h1>
           <p className="text-sm text-muted-foreground">Todos os seus gastos</p>
         </div>
-
         <div className="flex items-center gap-2 flex-wrap">
           <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
 
-          {/* Importar Fatura (cartão de crédito - PDF/imagem) */}
           <Dialog open={showInvoiceImport} onOpenChange={setShowInvoiceImport}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1.5 text-xs sm:text-sm">
                 <FileUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span className="hidden xs:inline">Importar</span>
-                <span className="hidden sm:inline"> Fatura</span>
+                <span className="hidden sm:inline">Importar Fatura</span>
+                <span className="sm:hidden">Fatura</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="bg-card border-border w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -199,13 +257,12 @@ export default function Expenses() {
             </DialogContent>
           </Dialog>
 
-          {/* Importar via Foto (Pix, débito, boleto, etc.) */}
           <Dialog open={showPhotoImport} onOpenChange={setShowPhotoImport}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1.5 text-xs sm:text-sm">
                 <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span className="hidden xs:inline">Importar</span>
-                <span className="hidden sm:inline"> por Foto</span>
+                <span className="hidden sm:inline">Importar por Foto</span>
+                <span className="sm:hidden">Foto</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="bg-card border-border w-[95vw] max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -218,7 +275,6 @@ export default function Expenses() {
             </DialogContent>
           </Dialog>
 
-          {/* Nova Despesa */}
           <Dialog open={showCreate} onOpenChange={setShowCreate}>
             <DialogTrigger asChild>
               <Button className="gradient-primary gap-1.5 text-xs sm:text-sm" size="sm">
@@ -234,22 +290,84 @@ export default function Expenses() {
         </div>
       </div>
 
-      {/* Filtros e totais */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <Card className="p-4 sm:p-5 bg-card border-border flex-1 min-w-[200px]">
-          <p className="text-sm text-muted-foreground">Total de Despesas</p>
-          <p className="text-2xl sm:text-3xl font-bold text-expense mt-1">{formatCurrency(total)}</p>
-          <p className="text-sm text-muted-foreground mt-1">{filtered.length} lançamento(s)</p>
-        </Card>
-        <Select value={filterCategory} onValueChange={setFilterCategory}>
-          <SelectTrigger className="w-[160px] sm:w-[180px] bg-secondary border-border">
-            <SelectValue placeholder="Categoria" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas categorias</SelectItem>
-            {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+      {/* Card total */}
+      <Card className="p-4 sm:p-5 bg-card border-border">
+        <p className="text-sm text-muted-foreground">Total de Despesas</p>
+        <p className="text-2xl sm:text-3xl font-bold text-expense mt-1">{formatCurrency(total)}</p>
+        <p className="text-sm text-muted-foreground mt-1">{filtered.length} lançamento(s)</p>
+      </Card>
+
+      {/* Filtros — mesmo padrão da página de Transações */}
+      <div className="space-y-2">
+        {/* Busca full width */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por descrição ou pessoa..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10 bg-secondary border-border w-full"
+          />
+        </div>
+
+        {/* 3 filtros em grid: 2 col mobile / 3 col desktop */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <Select value={filterCategory} onValueChange={setFilterCategory}>
+            <SelectTrigger className="bg-secondary border-border text-xs sm:text-sm h-9">
+              <SelectValue placeholder="Categoria" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas categorias</SelectItem>
+              {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+
+          <Select value={filterPaymentMethod} onValueChange={setFilterPaymentMethod}>
+            <SelectTrigger className="bg-secondary border-border text-xs sm:text-sm h-9">
+              <SelectValue placeholder="Pagamento" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos pagamentos</SelectItem>
+              <SelectItem value="pix">PIX</SelectItem>
+              <SelectItem value="credit_card">Cartão de Crédito</SelectItem>
+              <SelectItem value="debit_card">Cartão de Débito</SelectItem>
+              <SelectItem value="cash">Dinheiro</SelectItem>
+              <SelectItem value="transfer">Transferência</SelectItem>
+              <SelectItem value="boleto">Boleto</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={filterPerson} onValueChange={setFilterPerson}>
+            <SelectTrigger className="bg-secondary border-border text-xs sm:text-sm h-9 col-span-2 sm:col-span-1">
+              <SelectValue placeholder="Responsável" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="mine">Minhas</SelectItem>
+              <SelectItem value="third_party">De terceiros</SelectItem>
+              {thirdPartyNames.length > 0 && (
+                <>
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground font-medium">Por pessoa</div>
+                  {thirdPartyNames.map((name) => (
+                    <SelectItem key={name} value={name}>👤 {name}</SelectItem>
+                  ))}
+                </>
+              )}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Botão limpar */}
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-muted-foreground h-7 px-2 gap-1"
+            onClick={clearAllFilters}
+          >
+            <X className="w-3 h-3" /> Limpar filtros
+          </Button>
+        )}
       </div>
 
       {/* Lista de despesas */}
@@ -257,9 +375,10 @@ export default function Expenses() {
         {isLoading
           ? <div className="p-8 text-center text-muted-foreground">Carregando...</div>
           : filtered.length === 0
-            ? <div className="p-8 sm:p-12 text-center text-muted-foreground">Nenhuma despesa neste período</div>
-            : <div className="divide-y divide-border">
-                {filtered.map((t: any) => (
+            ? <div className="p-8 sm:p-12 text-center text-muted-foreground">Nenhuma despesa encontrada</div>
+            : (
+              <div className="divide-y divide-border">
+                {filtered.map((t) => (
                   <div key={t.id} className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 hover:bg-secondary/50 transition-colors gap-2">
                     <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                       <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-expense/15 flex items-center justify-center shrink-0">
@@ -268,16 +387,16 @@ export default function Expenses() {
                       <div className="min-w-0">
                         <p className="font-medium text-foreground text-sm sm:text-base truncate">{t.description}</p>
                         <p className="text-xs text-muted-foreground truncate">
-                          {formatDate(t.date)} · {(t as any).categories?.name || 'Sem categoria'}
+                          {formatDate(t.date)} · {t.categories?.name || 'Sem categoria'}
+                          {t.payment_method && <> · {PAYMENT_METHOD_LABELS[t.payment_method] || t.payment_method}</>}
                           {t.is_third_party && <> · 👤 {t.third_party_name}</>}
-                          {t.payment_method === 'credit_card' && ' · 💳 Cartão'}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                       <span className="font-mono font-semibold text-expense text-sm">-{formatCurrency(Number(t.amount))}</span>
-                      {(t as any).receipt_url && (
-                        <Button variant="ghost" size="icon" onClick={() => setPreviewReceipt((t as any).receipt_url)} className="h-8 w-8" title="Ver comprovante">
+                      {t.receipt_url && (
+                        <Button variant="ghost" size="icon" onClick={() => setPreviewReceipt(t.receipt_url)} className="h-8 w-8" title="Ver comprovante">
                           <FileText className="w-3.5 h-3.5 text-primary" />
                         </Button>
                       )}
@@ -291,10 +410,10 @@ export default function Expenses() {
                   </div>
                 ))}
               </div>
+            )
         }
       </Card>
 
-      {/* Dialog edição */}
       <Dialog open={!!editing} onOpenChange={open => !open && setEditing(null)}>
         <DialogContent className="bg-card border-border max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Editar Despesa</DialogTitle></DialogHeader>
