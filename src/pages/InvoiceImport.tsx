@@ -1,6 +1,5 @@
 /**
  * InvoiceImport - Importar fatura de cartão de crédito via PDF ou imagem.
- * Versão com responsividade mobile aprimorada.
  */
 
 import { useState, useRef } from "react";
@@ -31,12 +30,12 @@ import {
   AlertCircle,
   Trash2,
   Printer,
+  User,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/format";
 import Tesseract from "tesseract.js";
 
-// ─── Mapeamento de categorias da IA → IDs do seu sistema ──────────────────────
 const CATEGORY_KEYWORD_MAP = {
   Alimentação: ["restaurante", "lanchonete", "padaria", "bar", "café", "food", "ifood", "delivery", "pizza", "hamburguer"],
   Mercado: ["mercado", "supermercado", "hortifruti", "atacado", "carrefour", "extra", "pão de açúcar"],
@@ -49,14 +48,11 @@ const CATEGORY_KEYWORD_MAP = {
   Viagem: ["hotel", "airbnb", "passagem", "aeroporto", "voo", "latam", "gol"],
 };
 
-// ─── Funções auxiliares ────────────────────────────────────────────────────────
-
 function inferMonthFromDueDate(dueDateStr) {
   const monthNames = {
     janeiro: 1, fevereiro: 2, março: 3, abril: 4, maio: 5, junho: 6,
     julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12,
   };
-
   const now = new Date();
   let day = 0, month = 0, year = now.getFullYear();
 
@@ -66,7 +62,6 @@ function inferMonthFromDueDate(dueDateStr) {
     month = parseInt(dmyMatch[2]);
     year = dmyMatch[3] ? parseInt(dmyMatch[3]) : year;
   }
-
   const ptMatch = dueDateStr.match(/(\d{1,2})\s+de\s+(\w+)(?:\s+de\s+(\d{4}))?/i);
   if (ptMatch && !dmyMatch) {
     day = parseInt(ptMatch[1]);
@@ -74,12 +69,9 @@ function inferMonthFromDueDate(dueDateStr) {
     month = monthNames[monthName] || 0;
     year = ptMatch[3] ? parseInt(ptMatch[3]) : year;
   }
-
   if (!month) return { month: now.getMonth() + 1, year: now.getFullYear() };
-
   const refMonth = day >= 10 ? (month === 1 ? 12 : month - 1) : month;
   const refYear = day >= 10 && month === 1 ? year - 1 : year;
-
   return { month: refMonth, year: refYear };
 }
 
@@ -87,9 +79,7 @@ function guessCategory(description, categories) {
   const lower = description.toLowerCase();
   for (const [catName, keywords] of Object.entries(CATEGORY_KEYWORD_MAP)) {
     if (keywords.some((kw) => lower.includes(kw))) {
-      const found = categories.find(
-        (c) => c.name.toLowerCase() === catName.toLowerCase()
-      );
+      const found = categories.find((c) => c.name.toLowerCase() === catName.toLowerCase());
       if (found) return found.id;
     }
   }
@@ -101,14 +91,13 @@ function formatRefMonth(month, year) {
   return `${names[month - 1]}/${year}`;
 }
 
-// ─── Componente principal ──────────────────────────────────────────────────────
-
 export default function InvoiceImport() {
   const [step, setStep] = useState("upload");
   const [invoiceResult, setInvoiceResult] = useState(null);
   const [selectedCard, setSelectedCard] = useState("");
   const [dragging, setDragging] = useState(false);
   const [processingMsg, setProcessingMsg] = useState("Analisando fatura...");
+  const [cardError, setCardError] = useState(false);
   const fileInputRef = useRef(null);
   const qc = useQueryClient();
 
@@ -136,7 +125,6 @@ export default function InvoiceImport() {
 
   async function extractTextFromPDF(file) {
     setProcessingMsg("Carregando PDF...");
-
     const PDFJS_VERSION = "3.11.174";
     if (!window.pdfjsLib) {
       await new Promise((resolve, reject) => {
@@ -147,46 +135,31 @@ export default function InvoiceImport() {
         document.head.appendChild(script);
       });
     }
-
     const pdfjsLib = window.pdfjsLib;
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
-
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     let fullText = "";
-
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      const pageText = content.items.map((item) => item.str).join(" ").trim();
-      fullText += pageText + "\n";
+      fullText += content.items.map((item) => item.str).join(" ").trim() + "\n";
     }
-
     if (fullText.trim().length > 100) {
       setProcessingMsg("Texto extraído do PDF...");
       return fullText;
     }
-
     setProcessingMsg("PDF escaneado, aplicando OCR...");
     fullText = "";
-    const scale = 2.0;
-
     for (let i = 1; i <= pdf.numPages; i++) {
       setProcessingMsg(`OCR página ${i} de ${pdf.numPages}...`);
       const page = await pdf.getPage(i);
-      const viewport = page.getViewport({ scale });
-
+      const viewport = page.getViewport({ scale: 2.0 });
       const canvas = document.createElement("canvas");
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      const ctx = canvas.getContext("2d");
-
-      await page.render({ canvasContext: ctx, viewport }).promise;
-
-      const blob = await new Promise((resolve) =>
-        canvas.toBlob((b) => resolve(b), "image/png")
-      );
-
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      const blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b), "image/png"));
       const { data: { text } } = await Tesseract.recognize(blob, "por", {
         logger: (m) => {
           if (m.status === "recognizing text") {
@@ -194,16 +167,13 @@ export default function InvoiceImport() {
           }
         },
       });
-
       fullText += text + "\n";
     }
-
     return fullText;
   }
 
   async function analyzeInvoiceWithAI(invoiceText) {
     setProcessingMsg("Consultando inteligência artificial...");
-
     const prompt = `Você é um assistente financeiro. Analise o texto desta fatura de cartão de crédito e retorne APENAS um JSON válido (sem markdown, sem explicações) com a seguinte estrutura:
 {
   "dueDate": "DD/MM/YYYY",
@@ -220,29 +190,23 @@ export default function InvoiceImport() {
 }
 
 Regras:
-- O mês de referência da fatura é o mês ANTERIOR ao vencimento se o dia for >= 10. Ex: vencimento 15/03 → referenceMonth = 2 (fevereiro).
+- O mês de referência da fatura é o mês ANTERIOR ao vencimento se o dia for >= 10.
 - Ignore transações de pagamento da fatura anterior, anuidade, encargos e juros.
-- Para cada transação, infira a categoria baseada na descrição.
 - Converta valores para número decimal (ex: "R$ 1.234,56" → 1234.56).
-- A data de cada transação deve estar no formato YYYY-MM-DD. Se não houver dia, use o dia 15 do mês de referência.
+- A data de cada transação deve estar no formato YYYY-MM-DD.
 - Retorne APENAS o JSON, sem nenhum texto adicional.
 
 Texto da fatura:
 ${invoiceText.slice(0, 8000)}`;
 
     const { data, error } = await supabase.functions.invoke("ai-chat", {
-      body: {
-        messages: [{ role: "user", content: prompt }],
-        mode: "invoice",
-      },
+      body: { messages: [{ role: "user", content: prompt }], mode: "invoice" },
     });
-
     if (error) throw error;
 
     const responseText = data?.message || data?.content || "";
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("IA não retornou JSON válido");
-
     const parsed = JSON.parse(jsonMatch[0]);
 
     let { referenceMonth, referenceYear } = parsed;
@@ -253,40 +217,35 @@ ${invoiceText.slice(0, 8000)}`;
     }
     referenceYear = referenceYear || new Date().getFullYear();
 
-    const transactions = (parsed.transactions || []).map(
-      (t, idx) => {
-        const categoryByAIName = categories.find(
-          (c) => c.name.toLowerCase() === (t.category || "").toLowerCase()
-        );
-        const categoryId = categoryByAIName?.id || guessCategory(t.description || "", categories);
-
-        return {
-          id: crypto.randomUUID(),
-          description: t.description || `Transação ${idx + 1}`,
-          amount: Number(t.amount) || 0,
-          date: t.date || `${referenceYear}-${String(referenceMonth).padStart(2, "0")}-15`,
-          suggestedCategory: t.category || "Outro",
-          categoryId,
-          selected: true,
-          editing: false,
-        };
-      }
-    );
+    const transactions = (parsed.transactions || []).map((t, idx) => {
+      const categoryByAIName = categories.find(
+        (c) => c.name.toLowerCase() === (t.category || "").toLowerCase()
+      );
+      const categoryId = categoryByAIName?.id || guessCategory(t.description || "", categories);
+      return {
+        id: crypto.randomUUID(),
+        description: t.description || `Transação ${idx + 1}`,
+        amount: Number(t.amount) || 0,
+        date: t.date || `${referenceYear}-${String(referenceMonth).padStart(2, "0")}-15`,
+        suggestedCategory: t.category || "Outro",
+        categoryId,
+        selected: true,
+        isThirdParty: false,
+        thirdPartyName: "",
+      };
+    });
 
     return { referenceMonth, referenceYear, transactions };
   }
 
   async function processFile(file) {
     if (!file) return;
-
     const validTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
     if (!validTypes.includes(file.type)) {
       toast.error("Formato não suportado. Use JPG, PNG, WEBP ou PDF.");
       return;
     }
-
     setStep("processing");
-
     try {
       let text = "";
       if (file.type === "application/pdf") {
@@ -294,14 +253,11 @@ ${invoiceText.slice(0, 8000)}`;
       } else {
         text = await extractTextFromImage(file);
       }
-
       if (text.trim().length < 50) {
-        throw new Error("Não foi possível extrair texto suficiente da imagem. Tente uma foto mais nítida.");
+        throw new Error("Não foi possível extrair texto suficiente. Tente uma foto mais nítida.");
       }
-
       const result = await analyzeInvoiceWithAI(text);
       if (!result) throw new Error("Falha ao analisar fatura");
-
       setInvoiceResult(result);
       setStep("review");
     } catch (e) {
@@ -312,6 +268,14 @@ ${invoiceText.slice(0, 8000)}`;
 
   async function saveTransactions() {
     if (!invoiceResult) return;
+
+    // Cartão obrigatório
+    if (!selectedCard) {
+      setCardError(true);
+      toast.error("Selecione o cartão de crédito antes de salvar.");
+      return;
+    }
+    setCardError(false);
 
     const selected = invoiceResult.transactions.filter((t) => t.selected && t.amount > 0);
     if (selected.length === 0) {
@@ -329,38 +293,26 @@ ${invoiceText.slice(0, 8000)}`;
       category_id: t.categoryId || null,
       date: t.date,
       payment_method: "credit_card",
-      card_id: selectedCard || null,
+      card_id: selectedCard,
       notes: `Importado da fatura ${formatRefMonth(invoiceResult.referenceMonth, invoiceResult.referenceYear)}`,
       receipt_url: null,
-      is_third_party: false,
-      third_party_name: null,
+      is_third_party: t.isThirdParty,
+      third_party_name: t.isThirdParty ? t.thirdPartyName : null,
       user_id: user.id,
     }));
 
     const { error } = await supabase.from("transactions").insert(toInsert);
-    if (error) {
-      toast.error("Erro ao salvar: " + error.message);
-      return;
-    }
+    if (error) { toast.error("Erro ao salvar: " + error.message); return; }
 
     qc.invalidateQueries({ queryKey: ["transactions"] });
     toast.success(`${toInsert.length} transação(ões) importada(s) com sucesso!`);
     setStep("done");
   }
 
-  function handlePrint() {
-    window.print();
-  }
-
   function updateTransaction(id, field, value) {
     setInvoiceResult((prev) =>
       prev
-        ? {
-            ...prev,
-            transactions: prev.transactions.map((t) =>
-              t.id === id ? { ...t, [field]: value } : t
-            ),
-          }
+        ? { ...prev, transactions: prev.transactions.map((t) => t.id === id ? { ...t, [field]: value } : t) }
         : prev
     );
   }
@@ -376,9 +328,7 @@ ${invoiceText.slice(0, 8000)}`;
   }
 
   const selectedCount = invoiceResult?.transactions.filter((t) => t.selected).length || 0;
-  const selectedTotal = invoiceResult?.transactions
-    .filter((t) => t.selected)
-    .reduce((s, t) => s + t.amount, 0) || 0;
+  const selectedTotal = invoiceResult?.transactions.filter((t) => t.selected).reduce((s, t) => s + t.amount, 0) || 0;
 
   // ─── TELA: CONCLUÍDO ────────────────────────────────────────────────────────
 
@@ -389,11 +339,9 @@ ${invoiceText.slice(0, 8000)}`;
           <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10 text-green-500" />
         </div>
         <h2 className="text-xl sm:text-2xl font-bold text-foreground">Fatura importada!</h2>
-        <p className="text-muted-foreground text-sm">
-          {selectedCount} transação(ões) foram salvas em Despesas.
-        </p>
+        <p className="text-muted-foreground text-sm">{selectedCount} transação(ões) foram salvas em Despesas.</p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-          <Button variant="outline" onClick={() => { setStep("upload"); setInvoiceResult(null); }}>
+          <Button variant="outline" onClick={() => { setStep("upload"); setInvoiceResult(null); setSelectedCard(""); }}>
             Importar outra fatura
           </Button>
           <Button className="gradient-primary" onClick={() => window.history.back()}>
@@ -424,9 +372,9 @@ ${invoiceText.slice(0, 8000)}`;
 
   if (step === "review" && invoiceResult) {
     return (
-      <div className="space-y-4 sm:space-y-6 px-2 sm:px-0 print:space-y-4">
+      <div className="space-y-4 sm:space-y-6 px-2 sm:px-0">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2">
               <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-primary shrink-0" />
@@ -441,44 +389,44 @@ ${invoiceText.slice(0, 8000)}`;
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
-            <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1.5 text-xs sm:text-sm">
-              <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Imprimir
+            <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 text-xs sm:text-sm">
+              <Printer className="w-3.5 h-3.5" /> Imprimir
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs sm:text-sm"
-              onClick={() => { setStep("upload"); setInvoiceResult(null); }}
-            >
+            <Button variant="outline" size="sm" className="text-xs sm:text-sm"
+              onClick={() => { setStep("upload"); setInvoiceResult(null); }}>
               ← Voltar
             </Button>
           </div>
         </div>
 
-        {/* Cartão seletor */}
-        {cards && cards.length > 0 && (
-          <Card className="p-3 sm:p-4 bg-card border-border print:hidden">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <div className="flex items-center gap-2">
-                <CreditCard className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground shrink-0" />
-                <Label className="text-xs sm:text-sm font-medium whitespace-nowrap">Vincular ao cartão:</Label>
-              </div>
-              <Select value={selectedCard} onValueChange={setSelectedCard}>
-                <SelectTrigger className="w-full sm:w-48 bg-secondary border-border text-sm">
-                  <SelectValue placeholder="Selecione (opcional)" />
+        {/* Cartão — OBRIGATÓRIO */}
+        <Card className={`p-3 sm:p-4 border-2 transition-colors ${cardError ? "border-destructive bg-destructive/5" : "bg-card border-border"}`}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2">
+              <CreditCard className={`w-4 h-4 sm:w-5 sm:h-5 shrink-0 ${cardError ? "text-destructive" : "text-muted-foreground"}`} />
+              <Label className={`text-xs sm:text-sm font-medium whitespace-nowrap ${cardError ? "text-destructive" : ""}`}>
+                Cartão de crédito: <span className="text-destructive">*</span>
+              </Label>
+            </div>
+            <div className="flex-1">
+              <Select value={selectedCard} onValueChange={(v) => { setSelectedCard(v); setCardError(false); }}>
+                <SelectTrigger className={`w-full sm:w-56 text-sm ${cardError ? "border-destructive" : "bg-secondary border-border"}`}>
+                  <SelectValue placeholder="Selecione o cartão..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={null}>Nenhum</SelectItem>
                   {cards.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      💳 {c.name}
-                    </SelectItem>
+                    <SelectItem key={c.id} value={c.id}>💳 {c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {cardError && (
+                <p className="text-destructive text-xs mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> Selecione o cartão para continuar
+                </p>
+              )}
             </div>
-          </Card>
-        )}
+          </div>
+        </Card>
 
         {/* Sumário */}
         <div className="grid grid-cols-3 gap-2 sm:gap-3">
@@ -503,32 +451,12 @@ ${invoiceText.slice(0, 8000)}`;
           <div className="px-3 sm:px-5 py-2.5 sm:py-3 border-b border-border flex items-center justify-between gap-2">
             <span className="font-semibold text-xs sm:text-sm text-foreground whitespace-nowrap">Transações detectadas</span>
             <div className="flex gap-1 sm:gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-[10px] sm:text-xs h-7 px-2"
-                onClick={() =>
-                  setInvoiceResult((prev) =>
-                    prev
-                      ? { ...prev, transactions: prev.transactions.map((t) => ({ ...t, selected: true })) }
-                      : prev
-                  )
-                }
-              >
+              <Button variant="ghost" size="sm" className="text-[10px] sm:text-xs h-7 px-2"
+                onClick={() => setInvoiceResult((prev) => prev ? { ...prev, transactions: prev.transactions.map((t) => ({ ...t, selected: true })) } : prev)}>
                 Selecionar tudo
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-[10px] sm:text-xs h-7 px-2"
-                onClick={() =>
-                  setInvoiceResult((prev) =>
-                    prev
-                      ? { ...prev, transactions: prev.transactions.map((t) => ({ ...t, selected: false })) }
-                      : prev
-                  )
-                }
-              >
+              <Button variant="ghost" size="sm" className="text-[10px] sm:text-xs h-7 px-2"
+                onClick={() => setInvoiceResult((prev) => prev ? { ...prev, transactions: prev.transactions.map((t) => ({ ...t, selected: false })) } : prev)}>
                 Desmarcar
               </Button>
             </div>
@@ -536,24 +464,13 @@ ${invoiceText.slice(0, 8000)}`;
 
           <div className="divide-y divide-border">
             {invoiceResult.transactions.map((t) => (
-              <div
-                key={t.id}
-                className={`px-3 sm:px-4 py-3 sm:py-3 transition-colors ${
-                  t.selected ? "bg-card" : "bg-secondary/40 opacity-60"
-                }`}
-              >
-                {/* Mobile: layout empilhado */}
+              <div key={t.id} className={`px-3 sm:px-4 py-3 transition-colors ${t.selected ? "bg-card" : "bg-secondary/40 opacity-60"}`}>
                 <div className="flex items-start gap-2 sm:gap-3">
                   {/* Checkbox */}
-                  <button
-                    onClick={() => toggleSelect(t.id)}
-                    className="mt-1 shrink-0 touch-manipulation"
-                  >
-                    {t.selected ? (
-                      <CheckCircle2 className="w-5 h-5 text-green-500" />
-                    ) : (
-                      <XCircle className="w-5 h-5 text-muted-foreground" />
-                    )}
+                  <button onClick={() => toggleSelect(t.id)} className="mt-1 shrink-0 touch-manipulation">
+                    {t.selected
+                      ? <CheckCircle2 className="w-5 h-5 text-green-500" />
+                      : <XCircle className="w-5 h-5 text-muted-foreground" />}
                   </button>
 
                   {/* Detalhes */}
@@ -570,67 +487,72 @@ ${invoiceText.slice(0, 8000)}`;
                       </span>
                     </div>
 
-                    {/* Linha 2: Campos de edição - empilha no mobile */}
+                    {/* Linha 2: Valor, Data, Categoria */}
                     <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2 sm:flex-wrap">
-                      {/* Valor */}
                       <div className="flex items-center gap-1">
                         <Label className="text-[10px] sm:text-xs text-muted-foreground">R$</Label>
                         <Input
-                          type="number"
-                          step="0.01"
-                          value={t.amount}
+                          type="number" step="0.01" value={t.amount}
                           onChange={(e) => updateTransaction(t.id, "amount", parseFloat(e.target.value) || 0)}
                           className="bg-secondary border-border text-xs h-7 w-full sm:w-24"
                         />
                       </div>
-
-                      {/* Data */}
                       <div className="flex items-center gap-1">
                         <Calendar className="w-3 h-3 text-muted-foreground shrink-0" />
                         <Input
-                          type="date"
-                          value={t.date}
+                          type="date" value={t.date}
                           onChange={(e) => updateTransaction(t.id, "date", e.target.value)}
                           className="bg-secondary border-border text-xs h-7 w-full sm:w-36"
                         />
                       </div>
-
-                      {/* Categoria */}
                       <div className="col-span-2 sm:col-span-1">
-                        <Select
-                          value={t.categoryId}
-                          onValueChange={(v) => updateTransaction(t.id, "categoryId", v)}
-                        >
+                        <Select value={t.categoryId} onValueChange={(v) => updateTransaction(t.id, "categoryId", v)}>
                           <SelectTrigger className="bg-secondary border-border h-7 text-xs w-full sm:w-40">
                             <SelectValue placeholder="Categoria" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value={null}>Sem categoria</SelectItem>
                             {categories.map((c) => (
-                              <SelectItem key={c.id} value={c.id}>
-                                {c.icon} {c.name}
-                              </SelectItem>
+                              <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
-
-                      {/* Badge sugestão IA */}
                       {t.suggestedCategory && (
                         <Badge variant="secondary" className="text-[10px] sm:text-xs h-7 flex items-center gap-1 w-fit">
                           <Sparkles className="w-3 h-3" /> {t.suggestedCategory}
                         </Badge>
                       )}
                     </div>
+
+                    {/* Linha 3: Despesa de terceiro */}
+                    <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => updateTransaction(t.id, "isThirdParty", !t.isThirdParty)}
+                        className={`flex items-center gap-1.5 text-[10px] sm:text-xs px-2 py-1 rounded-md border transition-colors touch-manipulation ${
+                          t.isThirdParty
+                            ? "bg-amber-500/15 border-amber-500/50 text-amber-600"
+                            : "bg-secondary border-border text-muted-foreground hover:border-primary/40"
+                        }`}
+                      >
+                        <User className="w-3 h-3" />
+                        {t.isThirdParty ? "Despesa de terceiro" : "Minha despesa"}
+                      </button>
+                      {t.isThirdParty && (
+                        <Input
+                          placeholder="Nome da pessoa..."
+                          value={t.thirdPartyName}
+                          onChange={(e) => updateTransaction(t.id, "thirdPartyName", e.target.value)}
+                          className="bg-secondary border-border text-xs h-7 w-36 sm:w-44"
+                        />
+                      )}
+                    </div>
                   </div>
 
                   {/* Remover */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeTransaction(t.id)}
-                    className="h-7 w-7 hover:text-destructive shrink-0 mt-1 print:hidden touch-manipulation"
-                  >
+                  <Button variant="ghost" size="icon" onClick={() => removeTransaction(t.id)}
+                    className="h-7 w-7 hover:text-destructive shrink-0 mt-1 touch-manipulation">
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
@@ -642,19 +564,12 @@ ${invoiceText.slice(0, 8000)}`;
         {/* Aviso */}
         <div className="flex items-start gap-2 text-xs sm:text-sm text-muted-foreground bg-secondary rounded-lg p-3">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>
-            Revise as transações antes de salvar. Você pode editar descrição, valor, data e categoria.
-            Desmarque as que não quiser importar.
-          </span>
+          <span>Revise as transações antes de salvar. Você pode editar descrição, valor, data e categoria. Desmarque as que não quiser importar.</span>
         </div>
 
         {/* Botão salvar */}
-        <Button
-          className="w-full gradient-primary gap-2 print:hidden text-sm sm:text-base"
-          size="lg"
-          onClick={saveTransactions}
-          disabled={selectedCount === 0}
-        >
+        <Button className="w-full gradient-primary gap-2 text-sm sm:text-base" size="lg"
+          onClick={saveTransactions} disabled={selectedCount === 0}>
           <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
           Salvar {selectedCount} transação(ões) — {formatCurrency(selectedTotal)}
         </Button>
@@ -676,53 +591,33 @@ ${invoiceText.slice(0, 8000)}`;
         </p>
       </div>
 
-      {/* Drop zone */}
       <div
         className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center transition-colors cursor-pointer ${
-          dragging
-            ? "border-primary bg-primary/5"
-            : "border-border hover:border-primary/50 hover:bg-secondary/50 active:bg-secondary/50"
+          dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-secondary/50"
         }`}
         onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          const file = e.dataTransfer.files[0];
-          if (file) processFile(file);
-        }}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); const file = e.dataTransfer.files[0]; if (file) processFile(file); }}
         onClick={() => fileInputRef.current?.click()}
       >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*,.pdf"
-          className="hidden"
-          onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])}
-        />
+        <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden"
+          onChange={(e) => e.target.files?.[0] && processFile(e.target.files[0])} />
         <div className="flex flex-col items-center gap-3 sm:gap-4">
           <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
             <Upload className="w-7 h-7 sm:w-8 sm:h-8 text-primary" />
           </div>
           <div>
-            <p className="font-semibold text-foreground text-base sm:text-lg">
-              Arraste sua fatura aqui
-            </p>
-            <p className="text-muted-foreground text-xs sm:text-sm mt-1">
-              ou toque para selecionar um arquivo
-            </p>
+            <p className="font-semibold text-foreground text-base sm:text-lg">Arraste sua fatura aqui</p>
+            <p className="text-muted-foreground text-xs sm:text-sm mt-1">ou toque para selecionar um arquivo</p>
           </div>
           <div className="flex gap-2 flex-wrap justify-center">
             {["JPG", "PNG", "WEBP", "PDF"].map((ext) => (
-              <Badge key={ext} variant="secondary" className="text-xs">
-                {ext}
-              </Badge>
+              <Badge key={ext} variant="secondary" className="text-xs">{ext}</Badge>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Como funciona */}
       <Card className="p-4 sm:p-5 bg-card border-border">
         <h3 className="font-semibold text-foreground mb-3 flex items-center gap-2 text-sm sm:text-base">
           <Sparkles className="w-4 h-4 text-primary" /> Como funciona
@@ -732,7 +627,7 @@ ${invoiceText.slice(0, 8000)}`;
             { icon: "📤", text: "Você faz upload de um print ou PDF da sua fatura de cartão" },
             { icon: "🔍", text: "O sistema extrai o texto via OCR (imagens) ou leitura direta (PDF)" },
             { icon: "🤖", text: "A IA identifica cada compra, o valor, a data e infere a categoria" },
-            { icon: "📅", text: "O mês de referência é calculado automaticamente pelo vencimento" },
+            { icon: "💳", text: "Você seleciona o cartão (obrigatório) e marca despesas de terceiros" },
             { icon: "✅", text: "Você revisa, edita e confirma as transações antes de salvar" },
           ].map((item, i) => (
             <div key={i} className="flex items-start gap-2.5 sm:gap-3">
