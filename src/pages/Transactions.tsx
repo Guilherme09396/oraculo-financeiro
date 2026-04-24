@@ -42,6 +42,7 @@ import {
     X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { calculateInstallmentDates, splitInstallmentAmount } from "@/lib/installments";
 
 const PAYMENT_METHOD_LABELS = {
     pix: "PIX",
