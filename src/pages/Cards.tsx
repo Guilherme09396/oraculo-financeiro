@@ -332,12 +332,20 @@ export default function Cards() {
           {cards.map((card) => {
             const period = getInvoicePeriod(month, year, card.closing_day, card.due_day);
 
-            const cardTx = allCardTransactions.filter((t) =>
-              t.card_id === card.id &&
-              t.type === 'expense' &&
-              t.date >= period.start &&
-              t.date <= period.end
-            );
+            const cardTx = allCardTransactions.filter((t) => {
+              if (t.card_id !== card.id || t.type !== 'expense') return false;
+              // Parcelas: usar invoice_month / invoice_year se preenchidos
+              if (t.invoice_month && t.invoice_year) {
+                return t.invoice_month === (month + 1) && t.invoice_year === year;
+              }
+              // Parcelas legadas (sem invoice_*): usar mês da data
+              if (t.installment_total && t.installment_total > 1) {
+                const [ty, tm] = String(t.date).split('-').map(Number);
+                return tm === (month + 1) && ty === year;
+              }
+              // Compras à vista: usar período tradicional da fatura
+              return t.date >= period.start && t.date <= period.end;
+            });
             const spent = cardTx.reduce((s, t) => s + Number(t.amount), 0);
             const pct = card.card_limit > 0 ? Math.min(100, (spent / Number(card.card_limit)) * 100) : 0;
             const available = Math.max(0, Number(card.card_limit) - spent);
