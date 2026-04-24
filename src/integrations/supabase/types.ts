@@ -209,6 +209,27 @@ export type Database = {
         }
         Relationships: []
       }
+      people: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -247,10 +268,21 @@ export type Database = {
           created_at: string
           date: string
           description: string
+          group_id: string | null
           id: string
+          installment_number: number | null
+          installment_total: number | null
+          invoice_month: number | null
+          invoice_year: number | null
+          is_third_party: boolean
           notes: string | null
           payment_method: string | null
+          person_id: string | null
+          real_month: number | null
+          real_year: number | null
           receipt_url: string | null
+          status: string | null
+          third_party_name: string | null
           type: string
           updated_at: string
           user_id: string
@@ -262,10 +294,21 @@ export type Database = {
           created_at?: string
           date?: string
           description: string
+          group_id?: string | null
           id?: string
+          installment_number?: number | null
+          installment_total?: number | null
+          invoice_month?: number | null
+          invoice_year?: number | null
+          is_third_party?: boolean
           notes?: string | null
           payment_method?: string | null
+          person_id?: string | null
+          real_month?: number | null
+          real_year?: number | null
           receipt_url?: string | null
+          status?: string | null
+          third_party_name?: string | null
           type: string
           updated_at?: string
           user_id: string
@@ -277,10 +320,21 @@ export type Database = {
           created_at?: string
           date?: string
           description?: string
+          group_id?: string | null
           id?: string
+          installment_number?: number | null
+          installment_total?: number | null
+          invoice_month?: number | null
+          invoice_year?: number | null
+          is_third_party?: boolean
           notes?: string | null
           payment_method?: string | null
+          person_id?: string | null
+          real_month?: number | null
+          real_year?: number | null
           receipt_url?: string | null
+          status?: string | null
+          third_party_name?: string | null
           type?: string
           updated_at?: string
           user_id?: string
@@ -298,6 +352,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
             referencedColumns: ["id"]
           },
         ]
