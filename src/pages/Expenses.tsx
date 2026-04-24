@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTransactions, useCreateTransaction, useDeleteTransaction, useUpdateTransaction } from '@/hooks/useTransactions';
 import { useCategories } from '@/hooks/useCategories';
 import { useAuth } from '@/lib/auth';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { supabase } from '@/integrations/supabase/client';
 import { Card } from '@/components/ui/card';
@@ -23,6 +23,7 @@ import {
   Plus, TrendingDown, Pencil, Trash2, FileText, FileUp, Camera, Search, X
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { calculateInstallmentDates, splitInstallmentAmount } from '@/lib/installments';
 
 const PAYMENT_METHOD_LABELS = {
   pix: 'PIX',
@@ -35,6 +36,7 @@ const PAYMENT_METHOD_LABELS = {
 
 function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: () => void }) {
   const { user } = useAuth();
+  const qc = useQueryClient();
   const isEditing = !!transaction;
   const [description, setDescription] = useState(transaction?.description || '');
   const [amount, setAmount] = useState(transaction ? String(transaction.amount) : '');
@@ -46,6 +48,8 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
   const [uploading, setUploading] = useState(false);
   const [isThirdParty, setIsThirdParty] = useState(transaction?.is_third_party || false);
   const [thirdPartyName, setThirdPartyName] = useState(transaction?.third_party_name || '');
+  const [isInstallment, setIsInstallment] = useState(false);
+  const [totalInstallments, setTotalInstallments] = useState('2');
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const { data: categories = [] } = useCategories('expense');
@@ -58,6 +62,9 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
     },
   });
 
+  const selectedCard = cards.find((c) => c.id === cardId);
+  const canInstallment = !isEditing && paymentMethod === 'credit_card' && !!selectedCard;
+
   const handleUpload = async (file) => {
     if (!user) return;
     setUploading(true);
@@ -68,20 +75,63 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
     setUploading(false);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const data = {
+    const baseData = {
       description,
-      amount: parseFloat(amount),
       type: 'expense',
       category_id: categoryId || null,
-      date,
       payment_method: paymentMethod || null,
       notes: null,
       receipt_url: receiptUrl || null,
       card_id: (paymentMethod === 'credit_card' && cardId) ? cardId : null,
       is_third_party: isThirdParty,
       third_party_name: isThirdParty ? thirdPartyName : null,
+    };
+
+    if (canInstallment && isInstallment) {
+      const n = parseInt(totalInstallments);
+      if (!n || n < 2) { toast.error('Número de parcelas inválido'); return; }
+      const total = parseFloat(amount);
+      if (!total || total <= 0) { toast.error('Valor inválido'); return; }
+      if (!user) return;
+      try {
+        const dates = calculateInstallmentDates(date, selectedCard.closing_day, selectedCard.due_day, n);
+        const amounts = splitInstallmentAmount(total, n);
+        const groupId = crypto.randomUUID();
+        const rows = dates.map((d, i) => {
+          const [yy, mm] = d.split('-').map(Number);
+          return {
+            ...baseData,
+            user_id: user.id,
+            description: `${description} (${i + 1}/${n})`,
+            amount: amounts[i],
+            date: d,
+            installment_number: i + 1,
+            installment_total: n,
+            group_id: groupId,
+            invoice_month: mm,
+            invoice_year: yy,
+          };
+        });
+        const { error } = await supabase.from('transactions').insert(rows as any);
+        if (error) throw error;
+        const firstDate = dates[0].split('-').reverse().join('/');
+        const lastDate = dates[n - 1].split('-').reverse().join('/');
+        toast.success(`${n} parcelas cadastradas! 1ª em ${firstDate}, última em ${lastDate}.`);
+        qc.invalidateQueries({ queryKey: ['transactions'] });
+        qc.invalidateQueries({ queryKey: ['card_transactions'] });
+        onClose();
+      } catch (err: any) {
+        toast.error(err.message || 'Erro ao cadastrar parcelas');
+      }
+      return;
+    }
+
+    const data = {
+      ...baseData,
+      amount: parseFloat(amount),
+      date,
     };
     if (isEditing) update.mutate({ id: transaction.id, ...(data as any) }, { onSuccess: onClose });
     else create.mutate(data as any, { onSuccess: onClose });
@@ -133,6 +183,56 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
             <SelectTrigger className="bg-secondary border-border"><SelectValue placeholder="Selecione o cartão" /></SelectTrigger>
             <SelectContent>{cards.map((c) => <SelectItem key={c.id} value={c.id}>💳 {c.name}</SelectItem>)}</SelectContent>
           </Select>
+        </div>
+      )}
+      {canInstallment && (
+        <div className="rounded-lg border border-border bg-secondary/40 p-3 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <Label className="text-sm">Compra parcelada?</Label>
+              <p className="text-[11px] text-muted-foreground">Gera as parcelas futuras automaticamente</p>
+            </div>
+            <Select value={isInstallment ? 'yes' : 'no'} onValueChange={(v) => setIsInstallment(v === 'yes')}>
+              <SelectTrigger className="w-24 bg-card border-border h-8"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="no">Não</SelectItem>
+                <SelectItem value="yes">Sim</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {isInstallment && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Valor total</Label>
+                  <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0,00" className="bg-card border-border h-9" required />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Nº de parcelas</Label>
+                  <Input type="number" min="2" max="48" value={totalInstallments} onChange={(e) => setTotalInstallments(e.target.value)} className="bg-card border-border h-9" required />
+                </div>
+              </div>
+              {(() => {
+                const n = parseInt(totalInstallments);
+                const total = parseFloat(amount);
+                if (!n || n < 2 || !total || total <= 0 || !selectedCard) return null;
+                const dates = calculateInstallmentDates(date, selectedCard.closing_day, selectedCard.due_day, n);
+                const amounts = splitInstallmentAmount(total, n);
+                return (
+                  <div className="rounded-md bg-card/60 p-2 space-y-1 text-xs">
+                    <p className="text-muted-foreground">
+                      <strong className="text-foreground">{n}x de {formatCurrency(amounts[0])}</strong>
+                      {amounts[n - 1] !== amounts[0] && <> (última: {formatCurrency(amounts[n - 1])})</>}
+                    </p>
+                    <p className="text-muted-foreground">
+                      1ª parcela vence em <strong className="text-foreground">{formatDate(dates[0])}</strong>
+                      {n > 1 && <> · última: <strong className="text-foreground">{formatDate(dates[n - 1])}</strong></>}
+                    </p>
+                  </div>
+                );
+              })()}
+            </>
+          )}
         </div>
       )}
       <div className="space-y-2">
