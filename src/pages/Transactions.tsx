@@ -137,9 +137,9 @@ function TransactionDialog({ transaction, onClose, defaultType }) {
                 const { error } = await supabase.from("transactions").insert(rows);
                 if (error) throw error;
                 toast.success(`${n} parcelas cadastradas!`);
+                qc.invalidateQueries({ queryKey: ["transactions"] });
+                qc.invalidateQueries({ queryKey: ["card_transactions"] });
                 onClose();
-                // invalidar cache
-                window.dispatchEvent(new Event("focus"));
             } catch (err) {
                 toast.error(err.message || "Erro ao cadastrar parcelas");
             }
