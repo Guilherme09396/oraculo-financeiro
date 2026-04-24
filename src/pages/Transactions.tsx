@@ -55,6 +55,7 @@ const PAYMENT_METHOD_LABELS = {
 
 function TransactionDialog({ transaction, onClose, defaultType }) {
     const { user } = useAuth();
+    const qc = useQueryClient();
     const isEditing = !!transaction;
     const [description, setDescription] = useState(transaction?.description || "");
     const [amount, setAmount] = useState(transaction ? String(transaction.amount) : "");
