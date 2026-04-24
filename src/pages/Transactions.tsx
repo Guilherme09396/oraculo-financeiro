@@ -53,7 +53,7 @@ const PAYMENT_METHOD_LABELS = {
     boleto: "Boleto",
 };
 
-function TransactionDialog({ transaction, onClose, defaultType }) {
+function TransactionDialog({ transaction, onClose, defaultType }: { transaction?: any; onClose: () => void; defaultType?: string }) {
     const { user } = useAuth();
     const qc = useQueryClient();
     const isEditing = !!transaction;

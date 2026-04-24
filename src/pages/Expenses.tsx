@@ -33,7 +33,7 @@ const PAYMENT_METHOD_LABELS = {
   boleto: 'Boleto',
 };
 
-function ExpenseDialog({ transaction, onClose }) {
+function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: () => void }) {
   const { user } = useAuth();
   const isEditing = !!transaction;
   const [description, setDescription] = useState(transaction?.description || '');
