@@ -36,6 +36,7 @@ const PAYMENT_METHOD_LABELS = {
 
 function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: () => void }) {
   const { user } = useAuth();
+  const qc = useQueryClient();
   const isEditing = !!transaction;
   const [description, setDescription] = useState(transaction?.description || '');
   const [amount, setAmount] = useState(transaction ? String(transaction.amount) : '');
@@ -47,6 +48,8 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
   const [uploading, setUploading] = useState(false);
   const [isThirdParty, setIsThirdParty] = useState(transaction?.is_third_party || false);
   const [thirdPartyName, setThirdPartyName] = useState(transaction?.third_party_name || '');
+  const [isInstallment, setIsInstallment] = useState(false);
+  const [totalInstallments, setTotalInstallments] = useState('2');
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const { data: categories = [] } = useCategories('expense');
@@ -59,6 +62,9 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
     },
   });
 
+  const selectedCard = cards.find((c) => c.id === cardId);
+  const canInstallment = !isEditing && paymentMethod === 'credit_card' && !!selectedCard;
+
   const handleUpload = async (file) => {
     if (!user) return;
     setUploading(true);
@@ -69,20 +75,63 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
     setUploading(false);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const data = {
+    const baseData = {
       description,
-      amount: parseFloat(amount),
       type: 'expense',
       category_id: categoryId || null,
-      date,
       payment_method: paymentMethod || null,
       notes: null,
       receipt_url: receiptUrl || null,
       card_id: (paymentMethod === 'credit_card' && cardId) ? cardId : null,
       is_third_party: isThirdParty,
       third_party_name: isThirdParty ? thirdPartyName : null,
+    };
+
+    if (canInstallment && isInstallment) {
+      const n = parseInt(totalInstallments);
+      if (!n || n < 2) { toast.error('Número de parcelas inválido'); return; }
+      const total = parseFloat(amount);
+      if (!total || total <= 0) { toast.error('Valor inválido'); return; }
+      if (!user) return;
+      try {
+        const dates = calculateInstallmentDates(date, selectedCard.closing_day, selectedCard.due_day, n);
+        const amounts = splitInstallmentAmount(total, n);
+        const groupId = crypto.randomUUID();
+        const rows = dates.map((d, i) => {
+          const [yy, mm] = d.split('-').map(Number);
+          return {
+            ...baseData,
+            user_id: user.id,
+            description: `${description} (${i + 1}/${n})`,
+            amount: amounts[i],
+            date: d,
+            installment_number: i + 1,
+            installment_total: n,
+            group_id: groupId,
+            invoice_month: mm,
+            invoice_year: yy,
+          };
+        });
+        const { error } = await supabase.from('transactions').insert(rows as any);
+        if (error) throw error;
+        const firstDate = dates[0].split('-').reverse().join('/');
+        const lastDate = dates[n - 1].split('-').reverse().join('/');
+        toast.success(`${n} parcelas cadastradas! 1ª em ${firstDate}, última em ${lastDate}.`);
+        qc.invalidateQueries({ queryKey: ['transactions'] });
+        qc.invalidateQueries({ queryKey: ['card_transactions'] });
+        onClose();
+      } catch (err: any) {
+        toast.error(err.message || 'Erro ao cadastrar parcelas');
+      }
+      return;
+    }
+
+    const data = {
+      ...baseData,
+      amount: parseFloat(amount),
+      date,
     };
     if (isEditing) update.mutate({ id: transaction.id, ...(data as any) }, { onSuccess: onClose });
     else create.mutate(data as any, { onSuccess: onClose });
