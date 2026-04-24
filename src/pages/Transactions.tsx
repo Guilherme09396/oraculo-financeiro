@@ -565,7 +565,7 @@ export default function Transactions() {
                                     <Button variant="ghost" size="icon" onClick={() => setEditing(t)} className="text-muted-foreground hover:text-foreground h-8 w-8">
                                         <Pencil className="w-3.5 h-3.5" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" onClick={() => deleteTransaction.mutate(t.id)} className="text-muted-foreground hover:text-destructive h-8 w-8 hidden sm:flex">
+                                    <Button variant="ghost" size="icon" onClick={() => handleDelete(t)} className="text-muted-foreground hover:text-destructive h-8 w-8 hidden sm:flex">
                                         <Trash2 className="w-3.5 h-3.5" />
                                     </Button>
                                 </div>
