@@ -220,6 +220,56 @@ function TransactionDialog({ transaction, onClose, defaultType }) {
                     </Select>
                 </div>
             )}
+            {canInstallment && (
+                <div className="rounded-lg border border-border bg-secondary/40 p-3 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <Label className="text-sm">Compra parcelada?</Label>
+                            <p className="text-[11px] text-muted-foreground">Gera as parcelas futuras automaticamente</p>
+                        </div>
+                        <Select value={isInstallment ? "yes" : "no"} onValueChange={(v) => setIsInstallment(v === "yes")}>
+                            <SelectTrigger className="w-24 bg-card border-border h-8"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="no">Não</SelectItem>
+                                <SelectItem value="yes">Sim</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {isInstallment && (
+                        <>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Valor total</Label>
+                                    <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0,00" className="bg-card border-border h-9" required />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Nº de parcelas</Label>
+                                    <Input type="number" min="2" max="48" value={totalInstallments} onChange={(e) => setTotalInstallments(e.target.value)} className="bg-card border-border h-9" required />
+                                </div>
+                            </div>
+                            {(() => {
+                                const n = parseInt(totalInstallments);
+                                const total = parseFloat(amount);
+                                if (!n || n < 2 || !total || total <= 0 || !selectedCard) return null;
+                                const dates = calculateInstallmentDates(date, selectedCard.closing_day, selectedCard.due_day, n);
+                                const amounts = splitInstallmentAmount(total, n);
+                                return (
+                                    <div className="rounded-md bg-card/60 p-2 space-y-1 text-xs">
+                                        <p className="text-muted-foreground">
+                                            <strong className="text-foreground">{n}x de {formatCurrency(amounts[0])}</strong>
+                                            {amounts[n - 1] !== amounts[0] && <> (última: {formatCurrency(amounts[n - 1])})</>}
+                                        </p>
+                                        <p className="text-muted-foreground">
+                                            1ª parcela vence em <strong className="text-foreground">{formatDate(dates[0])}</strong>
+                                            {n > 1 && <> · última: <strong className="text-foreground">{formatDate(dates[n - 1])}</strong></>}
+                                        </p>
+                                    </div>
+                                );
+                            })()}
+                        </>
+                    )}
+                </div>
+            )}
             <div className="space-y-2">
                 <Label>Observações</Label>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notas opcionais..." className="bg-secondary border-border" rows={2} />
