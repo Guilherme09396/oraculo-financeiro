@@ -79,7 +79,7 @@ function useCards() {
   });
 }
 
-function CardDialog({ card, onClose }) {
+function CardDialog({ card, onClose }: { card?: any; onClose: () => void }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const isEditing = !!card;
@@ -91,7 +91,7 @@ function CardDialog({ card, onClose }) {
 
   const mut = useMutation({
     mutationFn: async () => {
-      const payload = {
+      const payload: any = {
         name, card_limit: parseFloat(limit), closing_day: parseInt(closingDay),
         due_day: parseInt(dueDay), color,
       };
@@ -99,7 +99,7 @@ function CardDialog({ card, onClose }) {
         const { error } = await supabase.from('credit_cards').update(payload).eq('id', card.id);
         if (error) throw error;
       } else {
-        payload.user_id = user.id;
+        payload.user_id = user!.id;
         const { error } = await supabase.from('credit_cards').insert(payload);
         if (error) throw error;
       }
@@ -287,7 +287,7 @@ export default function Cards() {
   });
 
   const deleteMut = useMutation({
-    mutationFn: async (id) => {
+    mutationFn: async (id: string) => {
       const { error } = await supabase.from('credit_cards').delete().eq('id', id);
       if (error) throw error;
     },
