@@ -68,6 +68,9 @@ function TransactionDialog({ transaction, onClose, defaultType }) {
     const [uploading, setUploading] = useState(false);
     const [isThirdParty, setIsThirdParty] = useState(transaction?.is_third_party || false);
     const [thirdPartyName, setThirdPartyName] = useState(transaction?.third_party_name || "");
+    // Parcelamento (somente para nova transação no cartão de crédito)
+    const [isInstallment, setIsInstallment] = useState(false);
+    const [totalInstallments, setTotalInstallments] = useState("2");
     const create = useCreateTransaction();
     const update = useUpdateTransaction();
     const { data: categories = [] } = useCategories(type);
@@ -79,6 +82,9 @@ function TransactionDialog({ transaction, onClose, defaultType }) {
             return data;
         },
     });
+
+    const selectedCard = cards.find((c) => c.id === cardId);
+    const canInstallment = !isEditing && type === "expense" && paymentMethod === "credit_card" && !!selectedCard;
 
     const handleReceiptUpload = async (file) => {
         if (!user) return;
@@ -92,20 +98,57 @@ function TransactionDialog({ transaction, onClose, defaultType }) {
         setUploading(false);
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        const data = {
+        const baseData = {
             description,
-            amount: parseFloat(amount),
             type,
             category_id: categoryId || null,
-            date,
             payment_method: paymentMethod || null,
             notes: notes || null,
             receipt_url: receiptUrl || null,
             card_id: paymentMethod === "credit_card" && cardId ? cardId : null,
             is_third_party: isThirdParty,
             third_party_name: isThirdParty ? thirdPartyName : null,
+        };
+
+        // Caso parcelado em cartão de crédito: gerar N transações
+        if (canInstallment && isInstallment) {
+            const n = parseInt(totalInstallments);
+            if (!n || n < 2) { toast.error("Número de parcelas inválido"); return; }
+            const total = parseFloat(amount);
+            if (!total || total <= 0) { toast.error("Valor inválido"); return; }
+            if (!user) return;
+            try {
+                const dates = calculateInstallmentDates(date, selectedCard.closing_day, selectedCard.due_day, n);
+                const amounts = splitInstallmentAmount(total, n);
+                const groupId = crypto.randomUUID();
+                const rows = dates.map((d, i) => ({
+                    ...baseData,
+                    user_id: user.id,
+                    description: `${description} (${i + 1}/${n})`,
+                    amount: amounts[i],
+                    date: d,
+                    installment_number: i + 1,
+                    installment_total: n,
+                    group_id: groupId,
+                }));
+                const { error } = await supabase.from("transactions").insert(rows);
+                if (error) throw error;
+                toast.success(`${n} parcelas cadastradas!`);
+                onClose();
+                // invalidar cache
+                window.dispatchEvent(new Event("focus"));
+            } catch (err) {
+                toast.error(err.message || "Erro ao cadastrar parcelas");
+            }
+            return;
+        }
+
+        const data = {
+            ...baseData,
+            amount: parseFloat(amount),
+            date,
         };
         if (isEditing) {
             update.mutate({ id: transaction.id, ...data }, { onSuccess: onClose });
