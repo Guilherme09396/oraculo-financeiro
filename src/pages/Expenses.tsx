@@ -101,12 +101,14 @@ function ExpenseDialog({ transaction, onClose }: { transaction?: any; onClose: (
         const groupId = crypto.randomUUID();
         const rows = dates.map((d, i) => {
           const [yy, mm] = d.split('-').map(Number);
+          // 1ª parcela: mantém o dia real da compra. Demais: usam a data de vencimento.
+          const rowDate = i === 0 ? date : d;
           return {
             ...baseData,
             user_id: user.id,
             description: `${description} (${i + 1}/${n})`,
             amount: amounts[i],
-            date: d,
+            date: rowDate,
             installment_number: i + 1,
             installment_total: n,
             group_id: groupId,
