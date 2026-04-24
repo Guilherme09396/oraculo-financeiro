@@ -124,19 +124,26 @@ function TransactionDialog({ transaction, onClose, defaultType }: { transaction?
                 const dates = calculateInstallmentDates(date, selectedCard.closing_day, selectedCard.due_day, n);
                 const amounts = splitInstallmentAmount(total, n);
                 const groupId = crypto.randomUUID();
-                const rows = dates.map((d, i) => ({
-                    ...baseData,
-                    user_id: user.id,
-                    description: `${description} (${i + 1}/${n})`,
-                    amount: amounts[i],
-                    date: d,
-                    installment_number: i + 1,
-                    installment_total: n,
-                    group_id: groupId,
-                }));
-                const { error } = await supabase.from("transactions").insert(rows);
+                const rows = dates.map((d, i) => {
+                    const [yy, mm] = d.split("-").map(Number);
+                    return {
+                        ...baseData,
+                        user_id: user.id,
+                        description: `${description} (${i + 1}/${n})`,
+                        amount: amounts[i],
+                        date: d,
+                        installment_number: i + 1,
+                        installment_total: n,
+                        group_id: groupId,
+                        invoice_month: mm,
+                        invoice_year: yy,
+                    };
+                });
+                const { data: inserted, error } = await supabase.from("transactions").insert(rows).select();
                 if (error) throw error;
-                toast.success(`${n} parcelas cadastradas!`);
+                const firstDate = dates[0].split("-").reverse().join("/");
+                const lastDate = dates[n - 1].split("-").reverse().join("/");
+                toast.success(`${n} parcelas cadastradas! 1ª em ${firstDate}, última em ${lastDate}.`);
                 qc.invalidateQueries({ queryKey: ["transactions"] });
                 qc.invalidateQueries({ queryKey: ["card_transactions"] });
                 onClose();
