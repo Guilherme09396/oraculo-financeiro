@@ -7,7 +7,7 @@ import {
 } from "@/hooks/useTransactions";
 import { useCategories } from "@/hooks/useCategories";
 import { useAuth } from "@/lib/auth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
@@ -42,6 +42,7 @@ import {
     X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { calculateInstallmentDates, splitInstallmentAmount } from "@/lib/installments";
 
 const PAYMENT_METHOD_LABELS = {
     pix: "PIX",
@@ -54,6 +55,7 @@ const PAYMENT_METHOD_LABELS = {
 
 function TransactionDialog({ transaction, onClose, defaultType }) {
     const { user } = useAuth();
+    const qc = useQueryClient();
     const isEditing = !!transaction;
     const [description, setDescription] = useState(transaction?.description || "");
     const [amount, setAmount] = useState(transaction ? String(transaction.amount) : "");
@@ -67,6 +69,9 @@ function TransactionDialog({ transaction, onClose, defaultType }) {
     const [uploading, setUploading] = useState(false);
     const [isThirdParty, setIsThirdParty] = useState(transaction?.is_third_party || false);
     const [thirdPartyName, setThirdPartyName] = useState(transaction?.third_party_name || "");
+    // Parcelamento (somente para nova transação no cartão de crédito)
+    const [isInstallment, setIsInstallment] = useState(false);
+    const [totalInstallments, setTotalInstallments] = useState("2");
     const create = useCreateTransaction();
     const update = useUpdateTransaction();
     const { data: categories = [] } = useCategories(type);
@@ -78,6 +83,9 @@ function TransactionDialog({ transaction, onClose, defaultType }) {
             return data;
         },
     });
+
+    const selectedCard = cards.find((c) => c.id === cardId);
+    const canInstallment = !isEditing && type === "expense" && paymentMethod === "credit_card" && !!selectedCard;
 
     const handleReceiptUpload = async (file) => {
         if (!user) return;
@@ -91,20 +99,57 @@ function TransactionDialog({ transaction, onClose, defaultType }) {
         setUploading(false);
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        const data = {
+        const baseData = {
             description,
-            amount: parseFloat(amount),
             type,
             category_id: categoryId || null,
-            date,
             payment_method: paymentMethod || null,
             notes: notes || null,
             receipt_url: receiptUrl || null,
             card_id: paymentMethod === "credit_card" && cardId ? cardId : null,
             is_third_party: isThirdParty,
             third_party_name: isThirdParty ? thirdPartyName : null,
+        };
+
+        // Caso parcelado em cartão de crédito: gerar N transações
+        if (canInstallment && isInstallment) {
+            const n = parseInt(totalInstallments);
+            if (!n || n < 2) { toast.error("Número de parcelas inválido"); return; }
+            const total = parseFloat(amount);
+            if (!total || total <= 0) { toast.error("Valor inválido"); return; }
+            if (!user) return;
+            try {
+                const dates = calculateInstallmentDates(date, selectedCard.closing_day, selectedCard.due_day, n);
+                const amounts = splitInstallmentAmount(total, n);
+                const groupId = crypto.randomUUID();
+                const rows = dates.map((d, i) => ({
+                    ...baseData,
+                    user_id: user.id,
+                    description: `${description} (${i + 1}/${n})`,
+                    amount: amounts[i],
+                    date: d,
+                    installment_number: i + 1,
+                    installment_total: n,
+                    group_id: groupId,
+                }));
+                const { error } = await supabase.from("transactions").insert(rows);
+                if (error) throw error;
+                toast.success(`${n} parcelas cadastradas!`);
+                qc.invalidateQueries({ queryKey: ["transactions"] });
+                qc.invalidateQueries({ queryKey: ["card_transactions"] });
+                onClose();
+            } catch (err) {
+                toast.error(err.message || "Erro ao cadastrar parcelas");
+            }
+            return;
+        }
+
+        const data = {
+            ...baseData,
+            amount: parseFloat(amount),
+            date,
         };
         if (isEditing) {
             update.mutate({ id: transaction.id, ...data }, { onSuccess: onClose });
@@ -175,6 +220,56 @@ function TransactionDialog({ transaction, onClose, defaultType }) {
                     </Select>
                 </div>
             )}
+            {canInstallment && (
+                <div className="rounded-lg border border-border bg-secondary/40 p-3 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <Label className="text-sm">Compra parcelada?</Label>
+                            <p className="text-[11px] text-muted-foreground">Gera as parcelas futuras automaticamente</p>
+                        </div>
+                        <Select value={isInstallment ? "yes" : "no"} onValueChange={(v) => setIsInstallment(v === "yes")}>
+                            <SelectTrigger className="w-24 bg-card border-border h-8"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="no">Não</SelectItem>
+                                <SelectItem value="yes">Sim</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {isInstallment && (
+                        <>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Valor total</Label>
+                                    <Input type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0,00" className="bg-card border-border h-9" required />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Nº de parcelas</Label>
+                                    <Input type="number" min="2" max="48" value={totalInstallments} onChange={(e) => setTotalInstallments(e.target.value)} className="bg-card border-border h-9" required />
+                                </div>
+                            </div>
+                            {(() => {
+                                const n = parseInt(totalInstallments);
+                                const total = parseFloat(amount);
+                                if (!n || n < 2 || !total || total <= 0 || !selectedCard) return null;
+                                const dates = calculateInstallmentDates(date, selectedCard.closing_day, selectedCard.due_day, n);
+                                const amounts = splitInstallmentAmount(total, n);
+                                return (
+                                    <div className="rounded-md bg-card/60 p-2 space-y-1 text-xs">
+                                        <p className="text-muted-foreground">
+                                            <strong className="text-foreground">{n}x de {formatCurrency(amounts[0])}</strong>
+                                            {amounts[n - 1] !== amounts[0] && <> (última: {formatCurrency(amounts[n - 1])})</>}
+                                        </p>
+                                        <p className="text-muted-foreground">
+                                            1ª parcela vence em <strong className="text-foreground">{formatDate(dates[0])}</strong>
+                                            {n > 1 && <> · última: <strong className="text-foreground">{formatDate(dates[n - 1])}</strong></>}
+                                        </p>
+                                    </div>
+                                );
+                            })()}
+                        </>
+                    )}
+                </div>
+            )}
             <div className="space-y-2">
                 <Label>Observações</Label>
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notas opcionais..." className="bg-secondary border-border" rows={2} />
@@ -237,6 +332,28 @@ export default function Transactions() {
     });
     const { data: categories = [] } = useCategories();
     const deleteTransaction = useDeleteTransaction();
+    const qcRoot = useQueryClient();
+
+    async function handleDelete(t: any) {
+        if (t.group_id && t.installment_total > 1) {
+            const choice = window.confirm(
+                `Esta é a parcela ${t.installment_number}/${t.installment_total}.\n\nClique OK para apagar TODAS as parcelas (deste e dos próximos meses).\nClique Cancelar para apagar SOMENTE esta parcela.`,
+            );
+            if (choice) {
+                const { error } = await supabase
+                    .from("transactions")
+                    .delete()
+                    .eq("group_id", t.group_id)
+                    .gte("installment_number", t.installment_number);
+                if (error) { toast.error(error.message); return; }
+                qcRoot.invalidateQueries({ queryKey: ["transactions"] });
+                qcRoot.invalidateQueries({ queryKey: ["card_transactions"] });
+                toast.success("Parcelas removidas!");
+                return;
+            }
+        }
+        deleteTransaction.mutate(t.id);
+    }
 
     const thirdPartyNames = Array.from(
         new Set(
@@ -448,7 +565,7 @@ export default function Transactions() {
                                     <Button variant="ghost" size="icon" onClick={() => setEditing(t)} className="text-muted-foreground hover:text-foreground h-8 w-8">
                                         <Pencil className="w-3.5 h-3.5" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" onClick={() => deleteTransaction.mutate(t.id)} className="text-muted-foreground hover:text-destructive h-8 w-8 hidden sm:flex">
+                                    <Button variant="ghost" size="icon" onClick={() => handleDelete(t)} className="text-muted-foreground hover:text-destructive h-8 w-8 hidden sm:flex">
                                         <Trash2 className="w-3.5 h-3.5" />
                                     </Button>
                                 </div>
