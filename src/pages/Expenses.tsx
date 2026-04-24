@@ -83,8 +83,8 @@ function ExpenseDialog({ transaction, onClose }) {
       is_third_party: isThirdParty,
       third_party_name: isThirdParty ? thirdPartyName : null,
     };
-    if (isEditing) update.mutate({ id: transaction.id, ...data }, { onSuccess: onClose });
-    else create.mutate(data, { onSuccess: onClose });
+    if (isEditing) update.mutate({ id: transaction.id, ...(data as any) }, { onSuccess: onClose });
+    else create.mutate(data as any, { onSuccess: onClose });
   };
 
   return (

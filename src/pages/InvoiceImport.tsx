@@ -126,8 +126,9 @@ export default function InvoiceImport() {
   async function extractTextFromPDF(file) {
     setProcessingMsg("Carregando PDF...");
     const PDFJS_VERSION = "3.11.174";
-    if (!window.pdfjsLib) {
-      await new Promise((resolve, reject) => {
+    const w = window as any;
+    if (!w.pdfjsLib) {
+      await new Promise<void>((resolve, reject) => {
         const script = document.createElement("script");
         script.src = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.js`;
         script.onload = () => resolve();
@@ -135,7 +136,7 @@ export default function InvoiceImport() {
         document.head.appendChild(script);
       });
     }
-    const pdfjsLib = window.pdfjsLib;
+    const pdfjsLib = w.pdfjsLib;
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.js`;
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -143,7 +144,7 @@ export default function InvoiceImport() {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      fullText += content.items.map((item) => item.str).join(" ").trim() + "\n";
+      fullText += content.items.map((item: any) => item.str).join(" ").trim() + "\n";
     }
     if (fullText.trim().length > 100) {
       setProcessingMsg("Texto extraído do PDF...");
@@ -159,8 +160,8 @@ export default function InvoiceImport() {
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-      const blob = await new Promise((resolve) => canvas.toBlob((b) => resolve(b), "image/png"));
-      const { data: { text } } = await Tesseract.recognize(blob, "por", {
+      const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), "image/png"));
+      const { data: { text } } = await Tesseract.recognize(blob as any, "por", {
         logger: (m) => {
           if (m.status === "recognizing text") {
             setProcessingMsg(`OCR pág. ${i}: ${Math.round(m.progress * 100)}%`);
