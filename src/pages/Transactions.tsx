@@ -332,6 +332,28 @@ export default function Transactions() {
     });
     const { data: categories = [] } = useCategories();
     const deleteTransaction = useDeleteTransaction();
+    const qcRoot = useQueryClient();
+
+    async function handleDelete(t: any) {
+        if (t.group_id && t.installment_total > 1) {
+            const choice = window.confirm(
+                `Esta é a parcela ${t.installment_number}/${t.installment_total}.\n\nClique OK para apagar TODAS as parcelas (deste e dos próximos meses).\nClique Cancelar para apagar SOMENTE esta parcela.`,
+            );
+            if (choice) {
+                const { error } = await supabase
+                    .from("transactions")
+                    .delete()
+                    .eq("group_id", t.group_id)
+                    .gte("installment_number", t.installment_number);
+                if (error) { toast.error(error.message); return; }
+                qcRoot.invalidateQueries({ queryKey: ["transactions"] });
+                qcRoot.invalidateQueries({ queryKey: ["card_transactions"] });
+                toast.success("Parcelas removidas!");
+                return;
+            }
+        }
+        deleteTransaction.mutate(t.id);
+    }
 
     const thirdPartyNames = Array.from(
         new Set(
