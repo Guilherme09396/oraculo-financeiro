@@ -58,7 +58,13 @@ export default function Reports() {
   const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
   const allMonthly = useMemo(() => {
-    const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth);
+    // Excluir compras feitas no crédito (saldo só é impactado no pagamento da fatura)
+    // Pagamentos de fatura permanecem como despesa real
+    const monthly = transactions.filter((t: any) => {
+      if (!(t.date >= startOfMonth && t.date <= endOfMonth)) return false;
+      if (t.type === 'expense' && t.payment_method === 'credit_card') return false;
+      return true;
+    });
     const paidFuture = futureItems.filter((f: any) => {
       const paidAt = (f as any).paid_at;
       return f.status === 'paid' && paidAt && paidAt >= startOfMonth && paidAt <= endOfMonth;
