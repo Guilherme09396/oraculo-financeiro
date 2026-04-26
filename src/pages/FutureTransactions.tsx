@@ -17,8 +17,11 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
-import { Plus, Trash2, CheckCircle, Clock, CalendarClock, Pencil, Undo2, FileText } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, Clock, CalendarClock, Pencil, Undo2, FileText, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
+import ThirdPartyField from '@/components/ThirdPartyField';
+import PersonFilter from '@/components/PersonFilter';
+import { Input } from '@/components/ui/input';
 
 function useFutureTransactions() {
   const { user } = useAuth();
