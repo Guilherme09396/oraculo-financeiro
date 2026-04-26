@@ -92,6 +92,11 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
     setUploading(false);
   };
 
+  const personFields = {
+    is_third_party: isThirdParty,
+    third_party_name: isThirdParty ? thirdPartyName : null,
+  };
+
   const mut = useMutation({
     mutationFn: async () => {
       if (isEditing) {
@@ -99,23 +104,21 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
           description: desc, amount: parseFloat(amount), type, category_id: categoryId || null,
           is_recurring: isRecurring, recurring_period: isRecurring ? recurringPeriod : null,
           receipt_url: receiptUrl || null,
+          ...personFields,
         };
 
         if (cascadeScope === 'all' && item.installment_group) {
-          // Update all items in the group
           const { error } = await supabase.from('future_transactions')
-            .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null })
+            .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null, ...personFields })
             .eq('installment_group', item.installment_group);
           if (error) throw error;
         } else if (cascadeScope === 'this_and_future' && item.installment_group) {
-          // Update this and future items
           const { error } = await supabase.from('future_transactions')
-            .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null })
+            .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null, ...personFields })
             .eq('installment_group', item.installment_group)
             .gte('due_date', item.due_date);
           if (error) throw error;
         } else {
-          // Single update
           updateData.due_date = dueDate;
           const { error } = await supabase.from('future_transactions').update(updateData).eq('id', item.id);
           if (error) throw error;
@@ -132,6 +135,7 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
             category_id: categoryId || null, due_date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
             is_installment: true, total_installments: total, current_installment: i + 1,
             status: 'pending', installment_group: groupId,
+            ...personFields,
           };
         });
         const { error } = await supabase.from('future_transactions').insert(rows);
@@ -149,6 +153,7 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
             due_date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
             is_recurring: true, recurring_period: 'monthly', status: 'pending',
             installment_group: recurringGroup,
+            ...personFields,
           });
           d.setMonth(d.getMonth() + 1);
         }
@@ -159,6 +164,7 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
           user_id: user!.id, description: desc, amount: parseFloat(amount), type,
           category_id: categoryId || null, due_date: dueDate,
           is_recurring: isRecurring, recurring_period: isRecurring ? recurringPeriod : null, status: 'pending',
+          ...personFields,
         });
         if (error) throw error;
       }
