@@ -21,7 +21,6 @@ import { Plus, Trash2, CheckCircle, Clock, CalendarClock, Pencil, Undo2, FileTex
 import { toast } from 'sonner';
 import ThirdPartyField from '@/components/ThirdPartyField';
 import PersonFilter from '@/components/PersonFilter';
-import { Input } from '@/components/ui/input';
 
 function useFutureTransactions() {
   const { user } = useAuth();
