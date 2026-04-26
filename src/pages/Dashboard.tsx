@@ -371,7 +371,7 @@ export default function Dashboard() {
       if (achieved > 0) list.push({ text: `🎯 Parabéns! Você atingiu ${achieved} meta(s) financeira(s)!`, type: 'info' });
     }
     return list;
-  }, [stats, expenseByCategory, futureItems, goals, cards]);
+  }, [stats, expenseByCategory, futureItems, goals, cards, invoicesThisMonth]);
 
   const tooltipStyle = {
     contentStyle: { background: 'hsl(220, 18%, 10%)', border: '1px solid hsl(220, 14%, 16%)', borderRadius: '8px', color: 'hsl(210, 20%, 95%)' },
