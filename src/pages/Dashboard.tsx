@@ -140,6 +140,57 @@ export default function Dashboard() {
     return (allIncome + paidFutureIncome) - (allExpense + paidFutureExpense);
   }, [transactions, futureItems]);
 
+  // Calcula fatura do mês selecionado para cada cartão (gastos + parcelas - já pago)
+  const invoicesThisMonth = useMemo(() => {
+    const formatISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const result: { cardId: string; cardName: string; remaining: number; spent: number; alreadyPaid: number; isFullyPaid: boolean }[] = [];
+    const monthName = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][month];
+
+    cards.forEach((card: any) => {
+      let periodStart: Date, periodEnd: Date;
+      if (card.due_day > card.closing_day) {
+        periodEnd = new Date(year, month, card.closing_day);
+        periodStart = new Date(year, month - 1, card.closing_day + 1);
+      } else {
+        periodEnd = new Date(year, month - 1, card.closing_day);
+        periodStart = new Date(year, month - 2, card.closing_day + 1);
+      }
+      const start = formatISO(periodStart);
+      const end = formatISO(periodEnd);
+
+      const cardTx = transactions.filter((t: any) => {
+        if (t.card_id !== card.id || t.type !== 'expense') return false;
+        if (t.invoice_month && t.invoice_year) {
+          return t.invoice_month === (month + 1) && t.invoice_year === year;
+        }
+        if (t.installment_total && t.installment_total > 1) {
+          const [ty, tm] = String(t.date).split('-').map(Number);
+          return tm === (month + 1) && ty === year;
+        }
+        return t.date >= start && t.date <= end;
+      });
+      const spent = cardTx.reduce((s: number, t: any) => s + Number(t.amount), 0);
+
+      const payments = transactions.filter((t: any) =>
+        t.type === 'expense' &&
+        (t.description || '').startsWith('Pagamento fatura') &&
+        (t.description || '').includes(card.name) &&
+        (t.description || '').includes(monthName)
+      );
+      const alreadyPaid = payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
+      const remaining = Math.max(0, spent - alreadyPaid);
+      result.push({
+        cardId: card.id,
+        cardName: card.name,
+        remaining,
+        spent,
+        alreadyPaid,
+        isFullyPaid: spent > 0 && alreadyPaid >= spent,
+      });
+    });
+    return result;
+  }, [cards, transactions, month, year]);
+
   const stats = useMemo(() => {
     const monthly = transactions.filter((t: any) => t.date >= startOfMonth && t.date <= endOfMonth);
     const income = monthly
@@ -163,18 +214,25 @@ export default function Dashboard() {
       .filter((f: any) => f.type === 'income')
       .reduce((s: number, f: any) => s + Number(f.amount), 0);
 
-    const totalIncome = income + futureIncPaid;
-    const totalExpenses = expenses + futureExpPaid;
+    // Pendentes do mês: contam para o total esperado de receita/despesa
+    const pendingFuture = futureItems.filter((f: any) => f.status === 'pending');
+    const pendingMonth = pendingFuture.filter((f: any) => f.due_date >= startOfMonth && f.due_date <= endOfMonth);
+    const futureExpPending = pendingMonth
+      .filter((f: any) => f.type === 'expense')
+      .reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const futureIncPending = pendingMonth
+      .filter((f: any) => f.type === 'income')
+      .reduce((s: number, f: any) => s + Number(f.amount), 0);
+
+    const totalIncome = income + futureIncPaid + futureIncPending;
+    const totalExpenses = expenses + futureExpPaid + futureExpPending;
     const balance = totalIncome - totalExpenses;
     const savings = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome * 100) : 0;
 
-    const pendingFuture = futureItems.filter((f: any) => f.status === 'pending');
-    const toReceive = pendingFuture
-      .filter((f: any) => f.type === 'income' && f.due_date >= startOfMonth && f.due_date <= endOfMonth)
-      .reduce((s: number, f: any) => s + Number(f.amount), 0);
-    const toPay = pendingFuture
-      .filter((f: any) => f.type === 'expense' && f.due_date >= startOfMonth && f.due_date <= endOfMonth)
-      .reduce((s: number, f: any) => s + Number(f.amount), 0);
+    const toReceive = futureIncPending;
+    // A Pagar = futuros pendentes + faturas em aberto deste mês
+    const invoicesRemaining = invoicesThisMonth.reduce((s, inv) => s + inv.remaining, 0);
+    const toPay = futureExpPending + invoicesRemaining;
 
     const cardSpending = monthly
       .filter((t: any) => t.type === 'expense' && t.payment_method === 'credit_card')
