@@ -248,7 +248,7 @@ export default function Dashboard() {
     const score = Math.round(Math.min(100, savingsScore + expenseRatio + goalsProgress + overdueScore));
 
     return { income: totalIncome, expenses: totalExpenses, balance, savings, score, toReceive, toPay, transactionCount: monthly.length, cardSpending };
-  }, [transactions, futureItems, goals, startOfMonth, endOfMonth]);
+  }, [transactions, futureItems, goals, startOfMonth, endOfMonth, invoicesThisMonth]);
 
   // Gráfico de categorias: exclui gastos no crédito E exclui pagamentos de fatura
   // (fatura aparece em gráfico separado)
