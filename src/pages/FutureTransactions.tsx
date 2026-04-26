@@ -79,6 +79,8 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
   const [totalInstallments, setTotalInstallments] = useState('');
   const [receiptUrl, setReceiptUrl] = useState((item as any)?.receipt_url || '');
   const [uploading, setUploading] = useState(false);
+  const [isThirdParty, setIsThirdParty] = useState((item as any)?.is_third_party || false);
+  const [thirdPartyName, setThirdPartyName] = useState((item as any)?.third_party_name || '');
 
   const handleUpload = async (file: File) => {
     if (!user) return;
