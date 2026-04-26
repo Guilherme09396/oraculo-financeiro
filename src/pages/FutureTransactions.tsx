@@ -290,13 +290,36 @@ export default function FutureTransactions() {
   const [choosingCascade, setChoosingCascade] = useState<{ item: any; action: 'edit' | 'delete' } | null>(null);
   const [payingItem, setPayingItem] = useState<any>(null);
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [filterPerson, setFilterPerson] = useState('all');
 
   const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
-  const monthItems = items.filter((i: any) => i.due_date >= startOfMonth && i.due_date <= endOfMonth);
+  const monthItemsRaw = items.filter((i: any) => i.due_date >= startOfMonth && i.due_date <= endOfMonth);
+
+  const thirdPartyNames = Array.from(
+    new Set(items.filter((i: any) => i.is_third_party && i.third_party_name).map((i: any) => i.third_party_name as string)),
+  ).sort();
+
+  const monthItems = monthItemsRaw.filter((i: any) => {
+    if (search) {
+      const term = search.toLowerCase();
+      const m1 = i.description.toLowerCase().includes(term);
+      const m2 = (i.third_party_name || '').toLowerCase().includes(term);
+      if (!m1 && !m2) return false;
+    }
+    if (filterType !== 'all' && i.type !== filterType) return false;
+    if (filterPerson === 'mine') { if (i.is_third_party) return false; }
+    else if (filterPerson === 'third_party') { if (!i.is_third_party) return false; }
+    else if (filterPerson !== 'all') { if (i.third_party_name !== filterPerson) return false; }
+    return true;
+  });
+
   const pending = monthItems.filter((i: any) => i.status !== 'paid');
   const paid = monthItems.filter((i: any) => i.status === 'paid');
+  const hasActiveFilters = filterType !== 'all' || filterPerson !== 'all' || search !== '';
 
   const undoPayment = useMutation({
     mutationFn: async (id: string) => {
