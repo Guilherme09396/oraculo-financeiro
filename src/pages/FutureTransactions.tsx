@@ -17,8 +17,10 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
-import { Plus, Trash2, CheckCircle, Clock, CalendarClock, Pencil, Undo2, FileText } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, Clock, CalendarClock, Pencil, Undo2, FileText, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
+import ThirdPartyField from '@/components/ThirdPartyField';
+import PersonFilter from '@/components/PersonFilter';
 
 function useFutureTransactions() {
   const { user } = useAuth();
@@ -77,6 +79,8 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
   const [totalInstallments, setTotalInstallments] = useState('');
   const [receiptUrl, setReceiptUrl] = useState((item as any)?.receipt_url || '');
   const [uploading, setUploading] = useState(false);
+  const [isThirdParty, setIsThirdParty] = useState((item as any)?.is_third_party || false);
+  const [thirdPartyName, setThirdPartyName] = useState((item as any)?.third_party_name || '');
 
   const handleUpload = async (file: File) => {
     if (!user) return;
@@ -88,6 +92,11 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
     setUploading(false);
   };
 
+  const personFields = {
+    is_third_party: isThirdParty,
+    third_party_name: isThirdParty ? thirdPartyName : null,
+  };
+
   const mut = useMutation({
     mutationFn: async () => {
       if (isEditing) {
@@ -95,23 +104,21 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
           description: desc, amount: parseFloat(amount), type, category_id: categoryId || null,
           is_recurring: isRecurring, recurring_period: isRecurring ? recurringPeriod : null,
           receipt_url: receiptUrl || null,
+          ...personFields,
         };
 
         if (cascadeScope === 'all' && item.installment_group) {
-          // Update all items in the group
           const { error } = await supabase.from('future_transactions')
-            .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null })
+            .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null, ...personFields })
             .eq('installment_group', item.installment_group);
           if (error) throw error;
         } else if (cascadeScope === 'this_and_future' && item.installment_group) {
-          // Update this and future items
           const { error } = await supabase.from('future_transactions')
-            .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null })
+            .update({ description: desc, amount: parseFloat(amount), type, category_id: categoryId || null, receipt_url: receiptUrl || null, ...personFields })
             .eq('installment_group', item.installment_group)
             .gte('due_date', item.due_date);
           if (error) throw error;
         } else {
-          // Single update
           updateData.due_date = dueDate;
           const { error } = await supabase.from('future_transactions').update(updateData).eq('id', item.id);
           if (error) throw error;
@@ -128,6 +135,7 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
             category_id: categoryId || null, due_date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
             is_installment: true, total_installments: total, current_installment: i + 1,
             status: 'pending', installment_group: groupId,
+            ...personFields,
           };
         });
         const { error } = await supabase.from('future_transactions').insert(rows);
@@ -145,6 +153,7 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
             due_date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
             is_recurring: true, recurring_period: 'monthly', status: 'pending',
             installment_group: recurringGroup,
+            ...personFields,
           });
           d.setMonth(d.getMonth() + 1);
         }
@@ -155,6 +164,7 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
           user_id: user!.id, description: desc, amount: parseFloat(amount), type,
           category_id: categoryId || null, due_date: dueDate,
           is_recurring: isRecurring, recurring_period: isRecurring ? recurringPeriod : null, status: 'pending',
+          ...personFields,
         });
         if (error) throw error;
       }
@@ -220,6 +230,13 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
           </div>
         ) : <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />}
       </div>
+      <ThirdPartyField
+        type={type === 'income' ? 'future_income' : 'future_expense'}
+        isThirdParty={isThirdParty}
+        thirdPartyName={thirdPartyName}
+        onIsThirdPartyChange={setIsThirdParty}
+        onThirdPartyNameChange={setThirdPartyName}
+      />
       <Button type="submit" className="w-full gradient-primary" disabled={mut.isPending}>{mut.isPending ? 'Salvando...' : isEditing ? 'Atualizar' : 'Adicionar'}</Button>
     </form>
   );
@@ -273,13 +290,36 @@ export default function FutureTransactions() {
   const [choosingCascade, setChoosingCascade] = useState<{ item: any; action: 'edit' | 'delete' } | null>(null);
   const [payingItem, setPayingItem] = useState<any>(null);
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [filterPerson, setFilterPerson] = useState('all');
 
   const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
   const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
-  const monthItems = items.filter((i: any) => i.due_date >= startOfMonth && i.due_date <= endOfMonth);
+  const monthItemsRaw = items.filter((i: any) => i.due_date >= startOfMonth && i.due_date <= endOfMonth);
+
+  const thirdPartyNames = Array.from(
+    new Set(items.filter((i: any) => i.is_third_party && i.third_party_name).map((i: any) => i.third_party_name as string)),
+  ).sort();
+
+  const monthItems = monthItemsRaw.filter((i: any) => {
+    if (search) {
+      const term = search.toLowerCase();
+      const m1 = i.description.toLowerCase().includes(term);
+      const m2 = (i.third_party_name || '').toLowerCase().includes(term);
+      if (!m1 && !m2) return false;
+    }
+    if (filterType !== 'all' && i.type !== filterType) return false;
+    if (filterPerson === 'mine') { if (i.is_third_party) return false; }
+    else if (filterPerson === 'third_party') { if (!i.is_third_party) return false; }
+    else if (filterPerson !== 'all') { if (i.third_party_name !== filterPerson) return false; }
+    return true;
+  });
+
   const pending = monthItems.filter((i: any) => i.status !== 'paid');
   const paid = monthItems.filter((i: any) => i.status === 'paid');
+  const hasActiveFilters = filterType !== 'all' || filterPerson !== 'all' || search !== '';
 
   const undoPayment = useMutation({
     mutationFn: async (id: string) => {
@@ -418,6 +458,36 @@ export default function FutureTransactions() {
           <p className="text-sm text-muted-foreground">Total no Mês</p>
           <p className="text-xl sm:text-2xl font-bold text-foreground mt-1">{monthItems.length} lançamento(s)</p>
         </Card>
+      </div>
+
+      {/* Filtros */}
+      <div className="space-y-2">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por descrição ou pessoa..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10 bg-secondary border-border w-full"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="bg-secondary border-border text-xs sm:text-sm h-9"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os tipos</SelectItem>
+              <SelectItem value="income">A receber</SelectItem>
+              <SelectItem value="expense">A pagar</SelectItem>
+            </SelectContent>
+          </Select>
+          <PersonFilter value={filterPerson} onChange={setFilterPerson} thirdPartyNames={thirdPartyNames} />
+        </div>
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" className="text-xs text-muted-foreground h-7 px-2 gap-1"
+            onClick={() => { setSearch(''); setFilterType('all'); setFilterPerson('all'); }}>
+            <X className="w-3 h-3" /> Limpar filtros
+          </Button>
+        )}
       </div>
 
       <div>

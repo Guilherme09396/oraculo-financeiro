@@ -21,6 +21,7 @@ import SettingsPage from "@/pages/Settings";
 import NotFound from "./pages/NotFound";
 import InvoiceImport from "./pages/InvoiceImport";
 import ExpensePhotoImport from "./pages/ExpensePhotoImport";
+import People from "./pages/People";
 
 
 const queryClient = new QueryClient();
@@ -59,6 +60,7 @@ const App = () => (
                                 element={<Categories />}
                             />
                             <Route path="/cards" element={<Cards />} />
+                            <Route path="/people" element={<People />} />
                             <Route path="/reports" element={<Reports />} />
                             <Route path="/assistant" element={<Assistant />} />
                             <Route

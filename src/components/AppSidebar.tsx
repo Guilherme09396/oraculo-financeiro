@@ -3,7 +3,7 @@ import { useAuth } from '@/lib/auth';
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp, TrendingDown,
   CalendarClock, Target, Tags, CreditCard, BarChart3, Bot,
-  Settings, LogOut, DollarSign, ChevronLeft, Menu, X,
+  Settings, LogOut, DollarSign, ChevronLeft, Menu, Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
@@ -17,6 +17,7 @@ const navItems = [
   { to: '/income', label: 'Receitas', icon: TrendingUp },
   { to: '/expenses', label: 'Despesas', icon: TrendingDown },
   { to: '/future', label: 'Lançamentos Futuros', icon: CalendarClock },
+  { to: '/people', label: 'Pessoas', icon: Users },
   { to: '/goals', label: 'Metas', icon: Target },
   { to: '/categories', label: 'Categorias', icon: Tags },
   { to: '/cards', label: 'Cartões', icon: CreditCard },
