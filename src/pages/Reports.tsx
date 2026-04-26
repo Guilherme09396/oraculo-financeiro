@@ -99,7 +99,11 @@ export default function Reports() {
       const d = new Date(year, month - i, 1);
       const ms = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       const me = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()}`;
-      const mi = transactions.filter((t: any) => t.date >= `${ms}-01` && t.date <= me);
+      const mi = transactions.filter((t: any) => {
+        if (!(t.date >= `${ms}-01` && t.date <= me)) return false;
+        if (t.type === 'expense' && t.payment_method === 'credit_card') return false;
+        return true;
+      });
       const pf = futureItems.filter((f: any) => {
         const pa = (f as any).paid_at;
         return f.status === 'paid' && pa && pa >= `${ms}-01` && pa <= me;
