@@ -346,6 +346,9 @@ export default function Dashboard() {
         const dueDay = card.due_day;
         const diff = dueDay - todayDate.getDate();
         if (diff >= 0 && diff <= 5) {
+          // Não alertar se a fatura deste mês já foi totalmente paga
+          const inv = invoicesThisMonth.find((i) => i.cardId === card.id);
+          if (inv && inv.isFullyPaid) return;
           list.push({ text: `💳 Cartão ${card.name} vence em ${diff === 0 ? 'HOJE' : `${diff} dia(s)`}!`, type: diff <= 2 ? 'danger' : 'warning' });
         }
       });
