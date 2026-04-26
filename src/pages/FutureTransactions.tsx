@@ -230,6 +230,13 @@ function FutureDialog({ item, onClose, cascadeScope }: { item?: any; onClose: ()
           </div>
         ) : <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />}
       </div>
+      <ThirdPartyField
+        type={type === 'income' ? 'future_income' : 'future_expense'}
+        isThirdParty={isThirdParty}
+        thirdPartyName={thirdPartyName}
+        onIsThirdPartyChange={setIsThirdParty}
+        onThirdPartyNameChange={setThirdPartyName}
+      />
       <Button type="submit" className="w-full gradient-primary" disabled={mut.isPending}>{mut.isPending ? 'Salvando...' : isEditing ? 'Atualizar' : 'Adicionar'}</Button>
     </form>
   );
