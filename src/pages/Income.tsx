@@ -10,13 +10,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import MonthSelector from '@/components/MonthSelector';
 import ReceiptPreviewDialog from '@/components/ReceiptPreviewDialog';
+import ThirdPartyField from '@/components/ThirdPartyField';
+import PersonFilter from '@/components/PersonFilter';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '@/components/ui/select';
-import { Plus, TrendingUp, Pencil, Trash2, FileText } from 'lucide-react';
+import { Plus, TrendingUp, Pencil, Trash2, FileText, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 function IncomeDialog({ transaction, onClose }: { transaction?: any; onClose: () => void }) {
@@ -29,6 +31,8 @@ function IncomeDialog({ transaction, onClose }: { transaction?: any; onClose: ()
   const [paymentMethod, setPaymentMethod] = useState(transaction?.payment_method || '');
   const [receiptUrl, setReceiptUrl] = useState((transaction as any)?.receipt_url || '');
   const [uploading, setUploading] = useState(false);
+  const [isThirdParty, setIsThirdParty] = useState(transaction?.is_third_party || false);
+  const [thirdPartyName, setThirdPartyName] = useState(transaction?.third_party_name || '');
   const create = useCreateTransaction();
   const update = useUpdateTransaction();
   const { data: categories = [] } = useCategories('income');
@@ -45,7 +49,18 @@ function IncomeDialog({ transaction, onClose }: { transaction?: any; onClose: ()
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const data: any = { description, amount: parseFloat(amount), type: 'income', category_id: categoryId || null, date, payment_method: paymentMethod || null, notes: null, receipt_url: receiptUrl || null };
+    const data: any = {
+      description,
+      amount: parseFloat(amount),
+      type: 'income',
+      category_id: categoryId || null,
+      date,
+      payment_method: paymentMethod || null,
+      notes: null,
+      receipt_url: receiptUrl || null,
+      is_third_party: isThirdParty,
+      third_party_name: isThirdParty ? thirdPartyName : null,
+    };
     if (isEditing) update.mutate({ id: transaction.id, ...data }, { onSuccess: onClose });
     else create.mutate(data, { onSuccess: onClose });
   };
@@ -84,6 +99,13 @@ function IncomeDialog({ transaction, onClose }: { transaction?: any; onClose: ()
           </div>
         ) : <Input type="file" accept="image/*,.pdf" disabled={uploading} onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])} className="bg-secondary border-border" />}
       </div>
+      <ThirdPartyField
+        type="income"
+        isThirdParty={isThirdParty}
+        thirdPartyName={thirdPartyName}
+        onIsThirdPartyChange={setIsThirdParty}
+        onThirdPartyNameChange={setThirdPartyName}
+      />
       <Button type="submit" className="w-full gradient-primary" disabled={create.isPending || update.isPending}>
         {(create.isPending || update.isPending) ? 'Salvando...' : isEditing ? 'Atualizar' : 'Adicionar'}
       </Button>
@@ -95,7 +117,9 @@ export default function Income() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
+  const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [filterPerson, setFilterPerson] = useState('all');
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [previewReceipt, setPreviewReceipt] = useState<string | null>(null);
@@ -107,8 +131,40 @@ export default function Income() {
   const { data: categories = [] } = useCategories('income');
   const deleteTransaction = useDeleteTransaction();
 
-  const filtered = filterCategory === 'all' ? transactions : transactions.filter((t: any) => t.category_id === filterCategory);
+  const thirdPartyNames = Array.from(
+    new Set(
+      transactions
+        .filter((t: any) => t.is_third_party && t.third_party_name)
+        .map((t: any) => t.third_party_name as string),
+    ),
+  ).sort();
+
+  const filtered = transactions.filter((t: any) => {
+    if (search) {
+      const term = search.toLowerCase();
+      const matchDescription = t.description.toLowerCase().includes(term);
+      const matchPerson = (t.third_party_name || '').toLowerCase().includes(term);
+      if (!matchDescription && !matchPerson) return false;
+    }
+    if (filterCategory !== 'all' && t.category_id !== filterCategory) return false;
+    if (filterPerson === 'mine') {
+      if (t.is_third_party) return false;
+    } else if (filterPerson === 'third_party') {
+      if (!t.is_third_party) return false;
+    } else if (filterPerson !== 'all') {
+      if (t.third_party_name !== filterPerson) return false;
+    }
+    return true;
+  });
+
   const total = filtered.reduce((s: number, t: any) => s + Number(t.amount), 0);
+  const hasActiveFilters = filterPerson !== 'all' || filterCategory !== 'all' || search !== '';
+
+  function clearAllFilters() {
+    setSearch('');
+    setFilterCategory('all');
+    setFilterPerson('all');
+  }
 
   return (
     <div className="space-y-6">
@@ -128,19 +184,38 @@ export default function Income() {
         </div>
       </div>
 
-      <div className="flex items-center gap-4 flex-wrap">
-        <Card className="p-4 sm:p-5 bg-card border-border flex-1 min-w-[200px]">
-          <p className="text-sm text-muted-foreground">Total de Receitas</p>
-          <p className="text-2xl sm:text-3xl font-bold text-income mt-1">{formatCurrency(total)}</p>
-          <p className="text-sm text-muted-foreground mt-1">{filtered.length} lançamento(s)</p>
-        </Card>
-        <Select value={filterCategory} onValueChange={setFilterCategory}>
-          <SelectTrigger className="w-[160px] sm:w-[180px] bg-secondary border-border"><SelectValue placeholder="Categoria" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas categorias</SelectItem>
-            {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+      <Card className="p-4 sm:p-5 bg-card border-border">
+        <p className="text-sm text-muted-foreground">Total de Receitas</p>
+        <p className="text-2xl sm:text-3xl font-bold text-income mt-1">{formatCurrency(total)}</p>
+        <p className="text-sm text-muted-foreground mt-1">{filtered.length} lançamento(s)</p>
+      </Card>
+
+      {/* Filtros */}
+      <div className="space-y-2">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por descrição ou pessoa..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10 bg-secondary border-border w-full"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Select value={filterCategory} onValueChange={setFilterCategory}>
+            <SelectTrigger className="bg-secondary border-border text-xs sm:text-sm h-9"><SelectValue placeholder="Categoria" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas categorias</SelectItem>
+              {categories.map(c => <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <PersonFilter value={filterPerson} onChange={setFilterPerson} thirdPartyNames={thirdPartyNames} />
+        </div>
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" className="text-xs text-muted-foreground h-7 px-2 gap-1" onClick={clearAllFilters}>
+            <X className="w-3 h-3" /> Limpar filtros
+          </Button>
+        )}
       </div>
 
       <Card className="bg-card border-border overflow-hidden">
@@ -153,7 +228,10 @@ export default function Income() {
                   <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-income/15 flex items-center justify-center shrink-0"><TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-income" /></div>
                   <div className="min-w-0">
                     <p className="font-medium text-foreground text-sm sm:text-base truncate">{t.description}</p>
-                    <p className="text-xs text-muted-foreground truncate">{formatDate(t.date)} · {(t as any).categories?.name || 'Sem categoria'}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {formatDate(t.date)} · {(t as any).categories?.name || 'Sem categoria'}
+                      {t.is_third_party && <> · 👤 {t.third_party_name}</>}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 sm:gap-2 shrink-0">
