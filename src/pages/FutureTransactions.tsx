@@ -460,6 +460,36 @@ export default function FutureTransactions() {
         </Card>
       </div>
 
+      {/* Filtros */}
+      <div className="space-y-2">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por descrição ou pessoa..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10 bg-secondary border-border w-full"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="bg-secondary border-border text-xs sm:text-sm h-9"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os tipos</SelectItem>
+              <SelectItem value="income">A receber</SelectItem>
+              <SelectItem value="expense">A pagar</SelectItem>
+            </SelectContent>
+          </Select>
+          <PersonFilter value={filterPerson} onChange={setFilterPerson} thirdPartyNames={thirdPartyNames} />
+        </div>
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" className="text-xs text-muted-foreground h-7 px-2 gap-1"
+            onClick={() => { setSearch(''); setFilterType('all'); setFilterPerson('all'); }}>
+            <X className="w-3 h-3" /> Limpar filtros
+          </Button>
+        )}
+      </div>
+
       <div>
         <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2"><Clock className="w-5 h-5" /> Pendentes ({pending.length})</h2>
         <Card className="bg-card border-border overflow-hidden">
