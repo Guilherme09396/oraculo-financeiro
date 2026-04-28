@@ -246,6 +246,101 @@ function PayInvoiceDialog({ card, spent, alreadyPaid, month, year, onClose }) {
   );
 }
 
+function CardTransactionsDialog({
+  data,
+  monthName,
+  year,
+  onClose,
+  onPreviewReceipt,
+}: {
+  data: { card: any; txs: any[] } | null;
+  monthName: string;
+  year: number;
+  onClose: () => void;
+  onPreviewReceipt: (url: string) => void;
+}) {
+  const [personFilter, setPersonFilter] = useState('all');
+
+  const txs = data?.txs || [];
+  const thirdPartyNames = Array.from(
+    new Set(txs.filter((t) => t.is_third_party && t.third_party_name).map((t) => t.third_party_name as string)),
+  ).sort();
+
+  const filtered = txs.filter((t) => {
+    if (personFilter === 'all') return true;
+    if (personFilter === 'mine') return !t.is_third_party;
+    if (personFilter === 'third_party') return !!t.is_third_party;
+    return t.is_third_party && t.third_party_name === personFilter;
+  });
+
+  const total = filtered.reduce((s, t) => s + Number(t.amount), 0);
+
+  return (
+    <Dialog open={!!data} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="bg-card border-border max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CreditCard className="w-5 h-5" style={{ color: data?.card.color }} />
+            {data?.card.name} — {monthName}/{year}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-sm text-muted-foreground">
+            {filtered.length} {filtered.length === 1 ? 'transação' : 'transações'} ·{' '}
+            <span className="text-expense font-mono font-semibold">{formatCurrency(total)}</span>
+          </div>
+          <div className="w-48">
+            <PersonFilter value={personFilter} onChange={setPersonFilter} thirdPartyNames={thirdPartyNames} />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
+          {filtered.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground py-8">Nenhuma transação encontrada.</p>
+          ) : (
+            filtered.map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-secondary/40 hover:bg-secondary/70 transition-colors"
+              >
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <TrendingDown className="w-4 h-4 text-expense shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-foreground text-sm truncate">{t.description}</span>
+                      {t.installment_total && t.installment_total > 1 && (
+                        <span className="text-[10px] text-muted-foreground shrink-0">
+                          {t.installment_number}/{t.installment_total}
+                        </span>
+                      )}
+                      {t.receipt_url && (
+                        <button onClick={() => onPreviewReceipt(t.receipt_url)} className="shrink-0">
+                          <FileText className="w-3.5 h-3.5 text-primary" />
+                        </button>
+                      )}
+                    </div>
+                    {t.is_third_party && t.third_party_name && (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <User className="w-3 h-3 text-primary" />
+                        <span className="text-[11px] text-primary">{t.third_party_name}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-expense font-mono text-sm">{formatCurrency(Number(t.amount))}</div>
+                  <div className="text-[10px] text-muted-foreground">{formatDate(t.date)}</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Cards() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
