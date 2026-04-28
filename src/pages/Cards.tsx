@@ -430,34 +430,14 @@ export default function Cards() {
                   )}
 
                   {cardTx.length > 0 && (
-                    <div className="pt-4 border-t border-border">
-                      <button onClick={() => setExpandedCard(isExpanded ? null : card.id)}
-                        className="flex items-center justify-between w-full text-sm text-muted-foreground hover:text-foreground transition-colors">
-                        <span>Transações do mês ({cardTx.length})</span>
-                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                      </button>
-                      {isExpanded && (
-                        <div className="space-y-1 mt-2 max-h-[220px] overflow-y-auto">
-                          {cardTx.map((t) => (
-                            <div key={t.id} className="flex items-center justify-between text-sm gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <TrendingDown className="w-3.5 h-3.5 text-expense shrink-0" />
-                                <span className="text-foreground truncate">{t.description}</span>
-                                {t.receipt_url && (
-                                  <button onClick={() => setPreviewReceipt(t.receipt_url)} className="shrink-0">
-                                    <FileText className="w-3 h-3 text-primary" />
-                                  </button>
-                                )}
-                              </div>
-                              <div className="text-right shrink-0">
-                                <span className="text-expense font-mono text-[11px]">{formatCurrency(Number(t.amount))}</span>
-                                <p className="text-[10px] text-muted-foreground">{formatDate(t.date)}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full gap-2 h-8 text-xs"
+                      onClick={() => setViewingTx({ card, txs: cardTx })}
+                    >
+                      <Eye className="w-4 h-4" />
+                      Ver transações ({cardTx.length})
+                    </Button>
                   )}
 
                   {payments.length > 0 && (
