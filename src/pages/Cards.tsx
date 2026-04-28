@@ -255,7 +255,7 @@ export default function Cards() {
   const { data: cards = [], isLoading } = useCards();
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [expandedCard, setExpandedCard] = useState(null);
+  const [viewingTx, setViewingTx] = useState<{ card: any; txs: any[] } | null>(null);
   const [previewReceipt, setPreviewReceipt] = useState(null);
   const [payingInvoice, setPayingInvoice] = useState(null);
 
