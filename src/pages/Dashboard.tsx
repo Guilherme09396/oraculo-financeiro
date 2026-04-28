@@ -224,8 +224,9 @@ export default function Dashboard() {
       .filter((f: any) => f.type === 'income')
       .reduce((s: number, f: any) => s + Number(f.amount), 0);
 
-    const totalIncome = income + futureIncPaid + futureIncPending;
-    const totalExpenses = expenses + futureExpPaid + futureExpPending;
+    // Apenas efetivados contam em receitas/despesas do mês
+    const totalIncome = income + futureIncPaid;
+    const totalExpenses = expenses + futureExpPaid;
     const balance = totalIncome - totalExpenses;
     const savings = totalIncome > 0 ? ((totalIncome - totalExpenses) / totalIncome * 100) : 0;
 
