@@ -486,6 +486,14 @@ export default function Cards() {
         </DialogContent>
       </Dialog>
 
+      <CardTransactionsDialog
+        data={viewingTx}
+        monthName={monthName}
+        year={year}
+        onClose={() => setViewingTx(null)}
+        onPreviewReceipt={(url) => setPreviewReceipt(url)}
+      />
+
       <ReceiptPreviewDialog url={previewReceipt} onClose={() => setPreviewReceipt(null)} />
     </div>
   );
