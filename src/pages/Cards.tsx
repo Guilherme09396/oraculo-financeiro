@@ -350,7 +350,6 @@ export default function Cards() {
             const spent = cardTx.reduce((s, t) => s + Number(t.amount), 0);
             const pct = card.card_limit > 0 ? Math.min(100, (spent / Number(card.card_limit)) * 100) : 0;
             const available = Math.max(0, Number(card.card_limit) - spent);
-            const isExpanded = expandedCard === card.id;
 
             const payments = allPayments.filter((p) =>
               p.description.includes(card.name) && p.description.includes(monthName)
