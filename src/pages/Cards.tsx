@@ -13,8 +13,9 @@ import ReceiptPreviewDialog from '@/components/ReceiptPreviewDialog';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, Trash2, CreditCard, Pencil, TrendingDown, ChevronDown, ChevronUp, FileText, Wallet, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, CreditCard, Pencil, TrendingDown, FileText, Wallet, CheckCircle2, Eye, User } from 'lucide-react';
 import { toast } from 'sonner';
+import PersonFilter from '@/components/PersonFilter';
 
 /**
  * Calcula o período de uma fatura dado o mês/ano de VENCIMENTO.
